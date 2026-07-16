@@ -1,261 +1,342 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/aryaMehta26/cloudgate/main/docs/assets/logo.svg" alt="CloudGate Logo" width="120" />
+<br/>
 
-# CloudGate
+```
+ ██████╗██╗      ██████╗ ██╗   ██╗██████╗  ██████╗  █████╗ ████████╗███████╗
+██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗██╔════╝ ██╔══██╗╚══██╔══╝██╔════╝
+██║     ██║     ██║   ██║██║   ██║██║  ██║██║  ███╗███████║   ██║   █████╗
+██║     ██║     ██║   ██║██║   ██║██║  ██║██║   ██║██╔══██║   ██║   ██╔══╝
+╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝╚██████╔╝██║  ██║   ██║   ███████╗
+ ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝
+```
 
-**A production-grade distributed API Gateway built in Go**
+**Production-grade distributed API gateway written in Go**
 
-_Token-bucket & sliding-window rate limiting · Circuit breaker · Bulkhead isolation_  
-_Multi-tenant routing · Cassandra audit logs · gRPC admin · Kubernetes-native_
+*10,000+ req/sec · Sub-50ms p99 · Zero-downtime policy updates*
 
 <br/>
 
-[![CI](https://github.com/aryaMehta26/cloudgate/actions/workflows/ci.yml/badge.svg)](https://github.com/aryaMehta26/cloudgate/actions/workflows/ci.yml)
-[![Security](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml/badge.svg)](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml)
+[![CI](https://github.com/aryaMehta26/cloudgate/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/aryaMehta26/cloudgate/actions/workflows/ci.yml)
+[![Security Scan](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml/badge.svg)](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/aryaMehta26/cloudgate)](https://goreportcard.com/report/github.com/aryaMehta26/cloudgate)
 [![codecov](https://codecov.io/gh/aryaMehta26/cloudgate/branch/main/graph/badge.svg)](https://codecov.io/gh/aryaMehta26/cloudgate)
-[![Go Version](https://img.shields.io/badge/go-1.22-00ADD8?logo=go)](https://go.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Go Version](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-6366f1.svg)](./CONTRIBUTING.md)
 
 <br/>
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         CloudGate Request Flow                       │
-│                                                                       │
-│  Client ──► Middleware Chain ──► Bulkhead ──► Rate Limiter           │
-│                                                    │                  │
-│                                                    ▼                  │
-│                         Circuit Breaker ──► Reverse Proxy ──► ↑      │
-│                                │                               │      │
-│                           Audit Writer ──► Cassandra           │      │
-│                                                               Redis   │
-└─────────────────────────────────────────────────────────────────────┘
-```
+[**Quick Start**](#-quick-start) · [**Architecture**](#-architecture) · [**Rate Limiting**](#-rate-limiting) · [**Circuit Breaker**](#-circuit-breaker) · [**Metrics**](#-prometheus-metrics) · [**Deploy**](#-deployment)
 
 </div>
 
 ---
 
-## Why CloudGate?
+## What is CloudGate?
 
-Modern microservice architectures collapse under uneven load. A single misbehaving tenant — or a spike in traffic — can cascade failures across every downstream service. CloudGate sits between your clients and your upstreams to enforce hard boundaries at every layer:
+CloudGate is a high-performance, multi-tenant API gateway built for teams running AI inference services, ML endpoints, or any backend that needs hard traffic guardrails. It sits between your clients and your upstreams and enforces five layers of protection on every single request.
 
-| Problem | CloudGate Solution |
+```
+  Client
+    │
+    ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        CloudGate Gateway                              │
+│                                                                        │
+│  ① RequestID ──► ② Logger ──► ③ Recovery ──► ④ Metrics              │
+│                                    │                                   │
+│                                    ▼                                   │
+│                          ⑤ Bulkhead Check ─── 503 if tenant full     │
+│                                    │                                   │
+│                                    ▼                                   │
+│                  ⑥ Token Bucket + Sliding Window ─── 429 if denied   │
+│                          (Redis Lua scripts)                           │
+│                                    │                                   │
+│                                    ▼                                   │
+│                        ⑦ Circuit Breaker ─── 502 if open            │
+│                                    │                                   │
+│                                    ▼                                   │
+│                     ⑧ httputil.ReverseProxy ──► Upstream             │
+│                                    │                                   │
+│                     ┌──────────────┴──────────────┐                   │
+│                     ▼                              ▼                   │
+│              Prometheus metrics          Cassandra audit log           │
+│              (20+ time-series)         (async, < 10ms write)          │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Features
+
+| Feature | Description |
 |---|---|
-| Runaway clients exhaust downstream ML inference pods | Redis-backed **token bucket + sliding window** rate limiting at 10k+ req/sec |
-| One noisy tenant starves all others | **Bulkhead isolation** — per-tenant goroutine semaphore |
-| Upstream service degrades → cascading failure | **Circuit breaker** FSM: Closed → Open → Half-Open auto-recovery |
-| No visibility into per-tenant traffic patterns | **20+ Prometheus metrics** with pre-built Grafana SLO dashboards (p99 < 50 ms) |
-| Policy updates require a deployment | **gRPC admin service** — hot-reload tenant policies with zero downtime |
-| Request audit trail for compliance | **Cassandra audit log** — sub-10 ms write latency at 5k writes/sec |
+| **Dual rate limiting** | Token bucket (burst absorption) + sliding window (precision) backed by Redis |
+| **Distributed counters** | Atomic Lua scripts — safe across all gateway replicas, no TOCTOU races |
+| **Circuit breaker** | Closed → Open → Half-Open FSM with configurable thresholds and auto-recovery |
+| **Bulkhead isolation** | Per-tenant goroutine semaphore — one tenant's storm can't starve others |
+| **Multi-tenant routing** | Per-tenant upstream config, rate limits, and circuit breaker settings |
+| **Cassandra audit log** | Async batch writer: sub-10ms latency at 5k writes/sec, 30-day auto-TTL |
+| **20+ Prometheus metrics** | Request latency histograms, CB state, bulkhead occupancy, Redis cmd latency |
+| **gRPC admin service** | Hot-reload tenant policies with zero gateway restart via protobuf RPC |
+| **Kubernetes-native** | Helm chart, HPA (3–20 replicas), PDB, distroless image, ServiceMonitor |
+| **Full CI/CD** | GitHub Actions: lint → test → build → Docker push → Helm deploy |
+| **Security pipeline** | govulncheck + Trivy image scan + gosec on every PR and weekly |
 
 ---
 
 ## Performance
 
-Benchmarked on a MacBook Pro M2 with a local Redis instance:
+Benchmarked on Apple M2 Pro, Redis 7.2, single gateway replica:
 
 ```
-BenchmarkTokenBucket-10       3,241,887    369.4 ns/op    0 B/op    0 allocs/op
-BenchmarkSlidingWindow-10     2,108,445    567.1 ns/op    0 B/op    0 allocs/op
-BenchmarkGatewayE2E-10           89,334  13,298.0 ns/op  512 B/op  12 allocs/op
+BenchmarkTokenBucket/allow-10         3,241,887    369 ns/op    0 B/op    0 allocs/op
+BenchmarkSlidingWindow/allow-10       2,108,445    567 ns/op    0 B/op    0 allocs/op
+BenchmarkGatewayE2E/full_chain-10        89,334  13,298 ns/op  512 B/op   12 allocs/op
 ```
 
-**End-to-end load test** (`wrk -t12 -c400 -d30s`):
+**30-second load test** (`wrk -t12 -c400 -d30s -H "X-Tenant-ID: tenant-acme"`):
 
-| Metric | Result |
-|---|---|
-| Throughput | **11,240 req/sec** |
-| p50 latency | 8.2 ms |
-| p95 latency | 28.4 ms |
-| p99 latency | **47.1 ms** |
-| Error rate | 0.00% |
+```
+Requests/sec:  11,240
+Latency p50:    8.2 ms
+Latency p95:   28.4 ms
+Latency p99:   47.1 ms   ← SLO target: < 50 ms ✓
+Transfer/sec:  24.8 MB
+Error rate:     0.00%
+```
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+```bash
+# macOS
+brew install go docker grpcurl wrk
+
+# Go 1.22+
+go version
+```
+
+### 1 — Clone and download dependencies
+
+```bash
+git clone git@github.com:aryaMehta26/cloudgate.git
+cd cloudgate
+go mod download
+```
+
+### 2 — Start infrastructure
+
+```bash
+make deps-up
+# Launches: Redis :6379 · Cassandra :9042 · Prometheus :9091 · Grafana :3000
+# First run waits ~60s for Cassandra to initialize
+```
+
+### 3 — Start a mock upstream
+
+```bash
+# Any HTTP server works
+python3 -m http.server 9999
+```
+
+### 4 — Run the gateway
+
+```bash
+make run-gateway
+```
+
+```
+{"level":"info","msg":"gateway listening","addr":":8080"}
+{"level":"info","msg":"metrics server listening","addr":":9090"}
+```
+
+### 5 — Send your first request
+
+```bash
+curl -i -H "X-Tenant-ID: tenant-acme" http://localhost:8080/
+
+HTTP/1.1 200 OK
+X-Request-ID: 4f3a9c1d-...
+```
+
+### 6 — Hit the rate limit
+
+```bash
+for i in {1..200}; do
+  curl -s -w "%{http_code}\n" -H "X-Tenant-ID: tenant-acme" http://localhost:8080/
+done
+# 200 200 200 ... 429 429 429  ← rate limited after ~100 requests
+```
+
+### 7 — View live metrics
+
+```bash
+# Terminal
+curl -s http://localhost:9090/metrics | grep cloudgate_gateway
+
+# Browser — Grafana SLO dashboard
+open http://localhost:3000   # admin / cloudgate
+```
 
 ---
 
 ## Architecture
 
+### Repository layout
+
 ```
 cloudgate/
 ├── cmd/
-│   ├── gateway/         # HTTP gateway entry point
-│   └── admin/           # gRPC admin service entry point
+│   ├── gateway/main.go        # HTTP server entry point
+│   └── admin/main.go          # gRPC admin service entry point
 │
 ├── internal/
-│   ├── ratelimit/       # Token bucket + sliding window (Redis Lua scripts)
-│   ├── router/          # Multi-tenant reverse proxy
-│   ├── circuitbreaker/  # Closed/Open/Half-Open FSM
-│   ├── bulkhead/        # Semaphore concurrency limiter
-│   ├── middleware/      # RequestID · Logger · Recovery · Metrics
-│   ├── metrics/         # Prometheus registry (20+ metrics)
-│   ├── audit/           # Async batched Cassandra writer
-│   ├── config/          # Viper config loader (file + env)
-│   └── tenant/          # Policy store + gRPC admin server
+│   ├── config/                # Viper config: file + env var override
+│   ├── ratelimit/             # Token bucket + sliding window (Redis Lua)
+│   ├── circuitbreaker/        # Closed / Open / Half-Open FSM
+│   ├── bulkhead/              # Channel-based semaphore per tenant
+│   ├── router/                # Multi-tenant reverse proxy
+│   ├── middleware/            # RequestID · Logger · Recovery · Metrics
+│   ├── metrics/               # Prometheus registry (20+ metrics)
+│   ├── audit/                 # Async Cassandra batch writer
+│   ├── health/                # /healthz and /readyz endpoints
+│   └── tenant/                # Redis-backed policy store + gRPC server
 │
 ├── pkg/
-│   ├── redis/           # go-redis/v9 wrapper with pooling
-│   └── cassandra/       # gocql wrapper with schema bootstrap
+│   ├── redis/                 # go-redis/v9 wrapper (pooling, retries)
+│   └── cassandra/             # gocql wrapper (token-aware, schema bootstrap)
 │
-├── proto/admin/         # Protobuf + gRPC stubs
+├── proto/admin/               # Protobuf definition + gRPC stubs
 │
-└── deploy/
-    ├── helm/cloudgate/  # Production Helm chart
-    ├── prometheus/      # Prometheus scrape config
-    └── grafana/         # Dashboard JSON
-```
-
-### Request lifecycle
-
-```
-                    ┌─ Request arrives ──────────────────────────────┐
-                    │                                                  │
-                    ▼                                                  │
-         ┌─────────────────────┐                                      │
-         │   Middleware Chain   │  RequestID · Logger · Recovery · Metrics
-         └─────────┬───────────┘                                      │
-                   │                                                   │
-                   ▼                                                   │
-         ┌─────────────────────┐                                      │
-         │   Bulkhead Check    │  Semaphore — 503 if tenant at max    │
-         └─────────┬───────────┘                                      │
-                   │                                                   │
-                   ▼                                                   │
-         ┌─────────────────────┐                                      │
-         │   Rate Limiter      │  Token Bucket ∧ Sliding Window       │
-         │   (Redis Lua)       │  429 with Retry-After if denied      │
-         └─────────┬───────────┘                                      │
-                   │                                                   │
-                   ▼                                                   │
-         ┌─────────────────────┐                                      │
-         │  Circuit Breaker    │  502 immediately if Open             │
-         └─────────┬───────────┘                                      │
-                   │                                                   │
-                   ▼                                                   │
-         ┌─────────────────────┐                                      │
-         │  Reverse Proxy      │  httputil.ReverseProxy → upstream    │
-         └─────────┬───────────┘                                      │
-                   │                                                   │
-                   ├─ RecordSuccess/RecordFailure → circuit breaker   │
-                   ├─ Prometheus metrics update                        │
-                   └─ Async audit event → Cassandra (non-blocking)    │
-                                                                       │
-                    └─ Response returned to client ───────────────────┘
+├── scripts/
+│   ├── load_test.sh           # wrk/hey load test with metrics snapshot
+│   └── seed_policies.sh       # Seed tenant policies via gRPC
+│
+├── deploy/
+│   ├── helm/cloudgate/        # Helm chart: Deployment, HPA, PDB, Service
+│   ├── cassandra/schema.cql   # CQL schema reference
+│   ├── prometheus/            # Prometheus scrape config
+│   └── grafana/               # Datasource + dashboard provisioning
+│
+├── .github/
+│   ├── workflows/             # ci.yml · cd.yml · security.yml
+│   ├── ISSUE_TEMPLATE/        # Bug report + feature request templates
+│   ├── CODEOWNERS             # @aryaMehta26 on every PR
+│   └── pull_request_template.md
+│
+├── Dockerfile                 # Multi-stage: Alpine builder → distroless runtime
+├── docker-compose.yml         # Local dev stack
+├── cloudgate.yaml             # Sample configuration
+├── Makefile                   # All developer tasks
+└── .golangci.yml              # 20+ linter config
 ```
 
 ---
 
-## Rate Limiting — Deep Dive
+## Rate Limiting
 
-Two complementary strategies run in **composite AND** mode — a request must pass both:
+CloudGate applies **two independent strategies in AND mode** — a request must pass both.
 
-### Token Bucket (burst absorption)
+### Token Bucket — burst absorption
+
 ```
-Capacity: 200 tokens
-Refill rate: 100 tokens/sec
-Burst window: 2 seconds
-
-t=0.0s  [████████████████████] 200/200  → ALLOW
-t=0.0s  [░░░░░░░░░░░░░░░░░░░░]   0/200  → DENY until refill
-t=0.5s  [██████████░░░░░░░░░░]  50/200  → ALLOW (50 refilled)
+Capacity: 200 tokens  │ ████████████████████ 200/200
+Refill:   100 req/sec │
+                       │  t=0s   200 tokens → 200 requests burst allowed
+                       │  t=1s    0 tokens  → 100 refilled → 100 more allowed
+                       │  t=2s  100 tokens  → 100 more allowed
 ```
 
-Implemented as an **atomic Redis Lua script** — no TOCTOU race conditions across gateway replicas.
+Implemented as an **atomic Redis Lua script** running inside a single Redis command — immune to TOCTOU races across replicas.
 
-### Sliding Window (precise rate enforcement)
+```lua
+-- Simplified: runs atomically inside Redis
+local tokens = HMGET(key, "tokens")
+local refilled = tokens + elapsed_seconds * rate
+if refilled >= 1 then
+    HMSET(key, "tokens", refilled - 1)
+    return 1  -- ALLOW
+end
+return 0  -- DENY
 ```
-Window: 10 seconds, Max: 500 requests
 
-Redis sorted set: ZADD key <timestamp_ns> <timestamp_ns>
-Expire old entries: ZREMRANGEBYSCORE key -inf <window_start>
-Count: ZCARD key < 500 → ALLOW
+### Sliding Window — precision counting
+
 ```
+Window: 10s, Limit: 500 requests
+
+Redis ZSET:  score=timestamp_ns, member=timestamp_ns
+  ZREMRANGEBYSCORE  →  evict timestamps outside window
+  ZCARD             →  count remaining = current requests in window
+  ZADD              →  add this request if count < limit
+```
+
+No approximation, no fixed-window boundary bursts — every request is counted in a true sliding window.
 
 ---
 
-## Circuit Breaker — State Machine
+## Circuit Breaker
 
 ```
-           failure_threshold reached
-  Closed ────────────────────────────► Open
-    ▲                                     │
-    │   success_threshold reached         │ open_timeout elapsed
-    │                                     ▼
-    └─────────────────────────── Half-Open
-           (one probe request)
+                    ┌──────────────────────────────┐
+                    │           CLOSED              │  Normal operation.
+                    │  failureCount tracks errors   │  All requests pass through.
+                    └──────────────┬───────────────┘
+                                   │
+                    failureCount ≥ failureThreshold (default: 5)
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │            OPEN               │  Upstream is failing.
+                    │   All requests → 502          │  Zero goroutines wasted.
+                    └──────────────┬───────────────┘
+                                   │
+                    openTimeout elapsed (default: 10s)
+                                   │
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │          HALF-OPEN            │  Testing recovery.
+                    │  One probe request allowed    │  Success? → CLOSED
+                    │  Failure? → back to OPEN      │
+                    └──────────────────────────────┘
 ```
 
-State transitions fire Prometheus metrics in real time:
-```
-cloudgate_circuit_breaker_transitions_total{upstream="...", from="closed", to="open"} 1
-cloudgate_circuit_breaker_state{upstream="..."}  1  # 0=closed, 1=open, 2=half-open
-```
+Each state transition fires a Prometheus counter and updates a gauge — visible in Grafana instantly.
 
----
-
-## Getting Started
-
-### Prerequisites
-
-| Tool | Version | Install |
-|---|---|---|
-| Go | 1.22+ | [go.dev/dl](https://go.dev/dl/) |
-| Docker | 24+ | [docker.com](https://www.docker.com/) |
-| Make | any | `brew install make` |
-
-### 1. Clone and install dependencies
+### Testing it locally
 
 ```bash
-git clone https://github.com/aryaMehta26/cloudgate.git
-cd cloudgate
-go mod download
-```
+# Kill your upstream (Ctrl+C on the python server)
+# Send requests — watch the breaker trip:
+for i in {1..15}; do
+  echo -n "req $i: "
+  curl -s -w "%{http_code}\n" -H "X-Tenant-ID: tenant-acme" http://localhost:8080/
+  sleep 0.1
+done
+# req 1-5:  502  (proxy errors, CB recording failures)
+# req 6-15: 502  (CB open — instant rejection)
 
-### 2. Start local infrastructure
+# Check state:
+curl -s http://localhost:9090/metrics | grep circuit_breaker_state
+# cloudgate_circuit_breaker_state{upstream="localhost:9999"} 1  (1 = open)
 
-```bash
-make deps-up
-# Starts Redis, Cassandra, Prometheus, and Grafana via Docker Compose
-# First start waits for Cassandra to be ready (~60s)
-```
-
-### 3. Start a mock upstream (new terminal)
-
-```bash
-# Any HTTP server works — here's a quick one:
-python3 -m http.server 9999
-```
-
-### 4. Run the gateway
-
-```bash
-make run-gateway
-# Gateway listening on :8080
-# Metrics on :9090/metrics
-```
-
-### 5. Send a request
-
-```bash
-curl -H "X-Tenant-ID: tenant-acme" http://localhost:8080/
-```
-
-### 6. View metrics
-
-```bash
-# Raw Prometheus metrics
-curl http://localhost:9090/metrics | grep cloudgate
-
-# Grafana SLO dashboard
-open http://localhost:3000   # admin / cloudgate
+# Restart upstream, wait 10s → CB moves to half-open → closed after 2 successes
+python3 -m http.server 9999 &
+sleep 10
+curl -H "X-Tenant-ID: tenant-acme" http://localhost:8080/  # probe
+curl -H "X-Tenant-ID: tenant-acme" http://localhost:8080/  # closed!
 ```
 
 ---
 
 ## Configuration
 
-CloudGate is configured via `cloudgate.yaml` with environment variable overrides (prefix `CLOUDGATE_`):
+`cloudgate.yaml` is the primary config file. All keys can be overridden with environment variables prefixed `CLOUDGATE_`.
 
 ```yaml
 server:
@@ -264,6 +345,8 @@ server:
 
 redis:
   addrs: ["localhost:6379"]
+  password: ""
+  db: 0
 
 cassandra:
   hosts: ["localhost"]
@@ -274,75 +357,104 @@ admin:
 
 tenants:
   - id: "tenant-acme"
-    upstreams: ["http://my-service:8080"]
+    upstreams:
+      - "http://my-ml-service:8080"
     rate_limit:
-      requests_per_second: 100
-      burst: 200
-      window_seconds: 10
-      max_in_window: 500
+      requests_per_second: 100  # token bucket refill rate
+      burst: 200                # token bucket capacity
+      window_seconds: 10        # sliding window length
+      max_in_window: 500        # max requests per window
     circuit_breaker:
-      failure_threshold: 5
-      open_timeout: "10s"
-      success_threshold: 2
-    bulkhead_max: 50
+      failure_threshold: 5      # failures before opening
+      open_timeout: "10s"       # how long to stay open
+      success_threshold: 2      # successes in half-open to close
+    bulkhead_max: 50            # max concurrent requests
 ```
 
-**Environment override example:**
+**Environment override:**
 ```bash
-CLOUDGATE_REDIS_ADDRS=redis-cluster:6379 \
+CLOUDGATE_REDIS_ADDRS=redis-prod:6379 \
 CLOUDGATE_CASSANDRA_HOSTS=cass1,cass2,cass3 \
 ./bin/cloudgate-gateway
 ```
 
 ---
 
-## Prometheus Metrics Reference
-
-| Metric | Type | Labels | Description |
-|---|---|---|---|
-| `cloudgate_gateway_requests_total` | Counter | tenant, method, path, status | Total requests processed |
-| `cloudgate_gateway_request_duration_seconds` | Histogram | tenant, method, status | Request latency (p50/p95/p99) |
-| `cloudgate_gateway_requests_in_flight` | Gauge | tenant | Active in-flight requests |
-| `cloudgate_ratelimit_decisions_total` | Counter | tenant, strategy, decision | Rate limit allow/deny decisions |
-| `cloudgate_circuit_breaker_state` | Gauge | upstream | CB state: 0=closed, 1=open, 2=half-open |
-| `cloudgate_circuit_breaker_transitions_total` | Counter | upstream, from, to | CB state transitions |
-| `cloudgate_bulkhead_rejected_total` | Counter | tenant | Requests rejected by bulkhead |
-| `cloudgate_bulkhead_current_occupancy` | Gauge | tenant | Current bulkhead occupancy |
-| `cloudgate_upstream_requests_total` | Counter | tenant, upstream, status | Upstream requests forwarded |
-| `cloudgate_upstream_request_duration_seconds` | Histogram | tenant, upstream | Upstream latency |
-| `cloudgate_upstream_errors_total` | Counter | tenant, upstream, error_type | Upstream errors by type |
-| `cloudgate_audit_queue_depth` | Gauge | — | Audit log write queue depth |
-| `cloudgate_audit_writes_total` | Counter | status | Cassandra write success/failure |
-| `cloudgate_audit_write_duration_seconds` | Histogram | — | Cassandra write latency |
-| `cloudgate_redis_command_duration_seconds` | Histogram | command | Redis command latency |
-| `cloudgate_redis_errors_total` | Counter | command | Redis errors by command |
-
----
-
 ## gRPC Admin API
 
-Hot-reload tenant policies without restarting the gateway:
+Update any tenant's policy **live** — no restart, no redeploy, no downtime.
 
 ```bash
 # Install grpcurl
 brew install grpcurl
 
-# Update a tenant policy in real time
+# Raise rate limit for a tenant
 grpcurl -plaintext -d '{
   "tenant_id": "tenant-acme",
-  "upstreams": ["http://new-service:8080"],
-  "rps_limit": 200,
-  "burst": 400,
+  "upstreams": ["http://my-service:8080"],
+  "rps_limit": 500,
+  "burst": 1000,
   "window_secs": 10,
-  "max_in_window": 1000,
+  "max_in_window": 2000,
   "bulkhead_max": 100,
   "cb_failure_threshold": 5,
   "cb_open_timeout_ms": 10000,
   "cb_success_threshold": 2
 }' localhost:50051 admin.v1.AdminService/UpdatePolicy
 
+# Read current config
+grpcurl -plaintext -d '{"tenant_id": "tenant-acme"}' \
+  localhost:50051 admin.v1.AdminService/GetPolicy
+
 # List all tenants
 grpcurl -plaintext localhost:50051 admin.v1.AdminService/ListTenants
+```
+
+Or use the seed script to bulk-load:
+```bash
+./scripts/seed_policies.sh localhost:50051
+```
+
+---
+
+## Prometheus Metrics
+
+| Metric | Type | Labels |
+|---|---|---|
+| `cloudgate_gateway_requests_total` | Counter | tenant, method, path, status |
+| `cloudgate_gateway_request_duration_seconds` | Histogram | tenant, method, status |
+| `cloudgate_gateway_requests_in_flight` | Gauge | tenant |
+| `cloudgate_gateway_response_size_bytes` | Histogram | tenant, status |
+| `cloudgate_ratelimit_decisions_total` | Counter | tenant, strategy, decision |
+| `cloudgate_circuit_breaker_state` | Gauge | upstream |
+| `cloudgate_circuit_breaker_transitions_total` | Counter | upstream, from, to |
+| `cloudgate_bulkhead_rejected_total` | Counter | tenant |
+| `cloudgate_bulkhead_current_occupancy` | Gauge | tenant |
+| `cloudgate_upstream_requests_total` | Counter | tenant, upstream, status |
+| `cloudgate_upstream_request_duration_seconds` | Histogram | tenant, upstream |
+| `cloudgate_upstream_errors_total` | Counter | tenant, upstream, error_type |
+| `cloudgate_audit_queue_depth` | Gauge | — |
+| `cloudgate_audit_writes_total` | Counter | status |
+| `cloudgate_audit_write_duration_seconds` | Histogram | — |
+| `cloudgate_redis_command_duration_seconds` | Histogram | command |
+| `cloudgate_redis_errors_total` | Counter | command |
+
+**Useful PromQL queries:**
+
+```promql
+# p99 request latency by tenant
+histogram_quantile(0.99,
+  sum(rate(cloudgate_gateway_request_duration_seconds_bucket[5m])) by (le, tenant)
+)
+
+# Rate-limit denial rate
+sum(rate(cloudgate_ratelimit_decisions_total{decision="denied"}[1m])) by (tenant)
+
+# Circuit breaker open state
+cloudgate_circuit_breaker_state == 1
+
+# Audit write throughput
+rate(cloudgate_audit_writes_total{status="success"}[1m]) * 60
 ```
 
 ---
@@ -350,104 +462,160 @@ grpcurl -plaintext localhost:50051 admin.v1.AdminService/ListTenants
 ## Testing
 
 ```bash
-# Unit tests
+# All unit tests
 make test
 
-# With race detector (always run before merging)
+# Race detector (always use before merging)
 make test-race
+
+# HTML coverage report
+make cover
+open coverage.html
 
 # Benchmarks
 make bench
 
-# Coverage report (opens HTML in browser)
-make cover
+# Save baseline, make a change, compare
+make bench-save
+# ... make your change ...
+make bench-compare
+
+# Full pre-PR check (fmt + vet + lint + test-race)
+make check
 ```
 
 ---
 
-## Deployment (Kubernetes / EKS)
+## Deployment
+
+### Kubernetes with Helm
 
 ```bash
-# Add your kubeconfig, then:
+# Prerequisites: kubectl configured, helm 3.x installed
+
 helm upgrade --install cloudgate ./deploy/helm/cloudgate \
   --namespace cloudgate \
   --create-namespace \
   --set image.tag=sha-$(git rev-parse --short HEAD) \
+  --set image.repository=ghcr.io/aryaMehta26/cloudgate \
   --set redis.addr=redis-master.redis.svc.cluster.local:6379 \
   --set cassandra.hosts=cassandra.cassandra.svc.cluster.local \
-  --atomic --wait
+  --atomic \
+  --timeout 5m
 
 # Verify
 kubectl get pods -n cloudgate
 kubectl get hpa -n cloudgate
 ```
 
-The Helm chart ships with:
-- **HPA** (min 3, max 20 replicas) on CPU + memory
-- **PodDisruptionBudget** (minAvailable: 2)
-- **Pod anti-affinity** for HA across nodes
-- **Distroless** runtime image (no shell, minimal attack surface)
-- **ServiceMonitor** for Prometheus Operator
+### What the Helm chart deploys
+
+| Object | Config |
+|---|---|
+| `Deployment` | Rolling update, readiness + liveness probes, hardened security context |
+| `HPA` | 3–20 replicas on CPU (70%) and memory (80%) |
+| `PodDisruptionBudget` | minAvailable: 2 — safe during node drains |
+| `Service` | ClusterIP on ports 8080 (HTTP), 9090 (metrics), 50051 (gRPC) |
+| `ServiceMonitor` | Prometheus Operator auto-scrape every 15s |
+
+### Docker
+
+```bash
+# Build
+docker build -t cloudgate:local .
+
+# Run with local config
+docker run -p 8080:8080 -p 9090:9090 \
+  -e CLOUDGATE_REDIS_ADDRS=host.docker.internal:6379 \
+  -e CLOUDGATE_CASSANDRA_HOSTS=host.docker.internal \
+  cloudgate:local
+```
 
 ---
 
 ## CI/CD Pipeline
 
+Every PR triggers:
+
 ```
-Pull Request:
-  golangci-lint → go test -race → go build → docker build
-  └── Benchmark regression check (fails if >150% slower than baseline)
-
-Push to main:
-  All PR checks → docker push (ghcr.io) → helm upgrade → rollout verify
-
-Weekly (Security):
-  govulncheck → trivy image scan → gosec static analysis → SARIF upload
+golangci-lint ──► go test -race ──► codecov upload
+                       │
+                       ▼
+               go build (gateway + admin)
+                       │
+                       ▼
+              docker build (amd64 + arm64)
+                       │
+                  merge to main
+                       │
+                       ▼
+              docker push → ghcr.io
+                       │
+                       ▼
+           helm upgrade → kubernetes
+                       │
+                       ▼
+       kubectl rollout status (verify)
 ```
 
-Branch protection rules on `main`:
-- Direct push disabled
-- Required reviewers: `@aryaMehta26` (via CODEOWNERS)
-- All status checks must pass: `lint`, `test`, `build`, `security`
-- Stale review dismissal on new commits
+Weekly security scan:
+```
+govulncheck ./...  ──►  Trivy image scan  ──►  gosec static analysis
+                              │
+                    SARIF uploaded to GitHub Security tab
+```
+
+**Branch protection on `main`:**
+- Direct push blocked
+- Required reviewer: `@aryaMehta26` (CODEOWNERS)
+- Required checks: `CI / Lint`, `CI / Test`, `CI / Build`, `Security / Scan`
+- Stale reviews dismissed on new commits
 
 ---
 
-## Cassandra Schema
+## Health Endpoints
 
-```cql
-CREATE TABLE cloudgate.request_audit (
-    tenant_id   TEXT,
-    request_id  UUID,
-    ts          TIMESTAMP,
-    method      TEXT,
-    path        TEXT,
-    status      INT,
-    latency_ms  BIGINT,
-    client_ip   TEXT,
-    PRIMARY KEY ((tenant_id), ts, request_id)
-) WITH CLUSTERING ORDER BY (ts DESC)
-  AND default_time_to_live = 2592000;  -- 30-day auto-expiry
+| Endpoint | Probe | Behaviour |
+|---|---|---|
+| `GET /healthz` | Liveness | Always 200 — process is running |
+| `GET /readyz` | Readiness | 200 if Redis reachable, 503 if degraded |
+
+```bash
+curl http://localhost:8080/healthz
+# {"status":"ok","uptime_sec":142}
+
+curl http://localhost:8080/readyz
+# {"status":"ok","uptime_sec":142,"checks":{"redis":"ok"}}
 ```
 
-Query recent requests for a tenant:
-```cql
-SELECT * FROM cloudgate.request_audit
-WHERE tenant_id = 'tenant-acme'
-  AND ts > toTimestamp(now()) - 1h
-LIMIT 100;
+---
+
+## Local Infrastructure
+
+```bash
+make deps-up     # start Redis, Cassandra, Prometheus, Grafana
+make deps-down   # stop all containers
 ```
+
+| Service | Port | Purpose |
+|---|---|---|
+| Redis | 6379 | Rate limit counters, tenant policy cache |
+| Cassandra | 9042 | Request audit log |
+| Prometheus | 9091 | Metrics storage (scrapes :9090) |
+| Grafana | 3000 | Dashboards — admin / cloudgate |
 
 ---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a branch: `git checkout -b feat/your-feature`
-3. Commit: `git commit -m "add weighted round-robin upstream selection"`
-4. Push and open a PR — the template will guide you through the checklist
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 
-All PRs require review from `@aryaMehta26` (enforced via CODEOWNERS).
+**Quick rules:**
+- Run `make check` before every PR
+- One logical change per commit, present tense, lowercase, no emoji
+- Benchmark evidence required for hot-path changes
+
+All PRs require review from `@aryaMehta26`.
 
 ---
 
@@ -459,8 +627,10 @@ All PRs require review from `@aryaMehta26` (enforced via CODEOWNERS).
 
 <div align="center">
 
-Built with Go · Redis · Cassandra · Kubernetes · Prometheus
+**Go · Redis · Cassandra · Kubernetes · Prometheus · gRPC**
 
-_If this project helped you, leave a ⭐_
+<br/>
+
+*Built to survive the traffic that breaks everything else*
 
 </div>
