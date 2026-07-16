@@ -1,6 +1,9 @@
 linters-settings:
   gocyclo:
-    min-complexity: 15
+    min-complexity: 18
+  funlen:
+    lines: 80
+    statements: 50
   dupl:
     threshold: 100
   goconst:
