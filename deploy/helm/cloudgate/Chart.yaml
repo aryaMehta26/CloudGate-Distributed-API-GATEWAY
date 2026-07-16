@@ -1,0 +1,18 @@
+apiVersion: v2
+name: cloudgate
+description: Distributed API Gateway with rate limiting, circuit breaker, and multi-tenant routing
+
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - api-gateway
+  - rate-limiting
+  - circuit-breaker
+  - kubernetes
+  - golang
+
+maintainers:
+  - name: Arya Mehta
+    url: https://github.com/aryaMehta26

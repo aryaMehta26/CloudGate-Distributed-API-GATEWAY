@@ -1,0 +1,93 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/aryamehta26/cloudgate
+  tag: latest
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+  metricsPort: 9090
+  grpcPort: 50051
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: cloudgate.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 15
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - cloudgate
+          topologyKey: kubernetes.io/hostname
+
+env:
+  CLOUDGATE_SERVER_ADDR: ":8080"
+  CLOUDGATE_SERVER_METRICS_ADDR: ":9090"
+  CLOUDGATE_ADMIN_GRPC_ADDR: ":50051"
+
+# Redis connection — override with your cluster Redis address
+redis:
+  addr: "redis-master.redis.svc.cluster.local:6379"
+
+# Cassandra connection
+cassandra:
+  hosts: "cassandra.cassandra.svc.cluster.local"
+  keyspace: "cloudgate"
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  path: /metrics
+  port: metrics

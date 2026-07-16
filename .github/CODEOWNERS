@@ -1,0 +1,24 @@
+# ── CloudGate CODEOWNERS ──────────────────────────────────────────────────────
+# Every pull request into this repository requires a review from @aryaMehta26.
+# GitHub enforces this when branch protection is enabled.
+#
+# Pattern syntax: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Global: all files require review from the repository owner
+*                               @aryaMehta26
+
+# Core infrastructure — extra scrutiny
+/internal/ratelimit/            @aryaMehta26
+/internal/circuitbreaker/       @aryaMehta26
+/internal/router/               @aryaMehta26
+/internal/audit/                @aryaMehta26
+
+# CI/CD and deployment — never auto-approved
+/.github/                       @aryaMehta26
+/deploy/                        @aryaMehta26
+/Dockerfile                     @aryaMehta26
+/Makefile                       @aryaMehta26
+
+# Proto definitions — backward-compatibility sensitive
+/proto/                         @aryaMehta26

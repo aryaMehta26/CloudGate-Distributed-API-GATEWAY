@@ -1,0 +1,35 @@
+# CloudGate — Files to never commit
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Build artifacts
+bin/
+*.exe
+*.test
+*.out
+coverage.html
+coverage.out
+
+# Go workspace
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets — NEVER commit these
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+secrets/
+kubeconfig
+kubeconfig.yaml
+
+# Local config overrides (use cloudgate.yaml.example as template)
+cloudgate.local.yaml

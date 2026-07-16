@@ -1,0 +1,81 @@
+version: "3.9"
+
+# ── CloudGate Local Development Stack ────────────────────────────────────────
+# Runs Redis and Cassandra locally so you can run the gateway with:
+#   make run-gateway
+#
+# Usage:
+#   docker compose up -d        # start dependencies
+#   make run-gateway            # run the gateway
+#   docker compose down         # stop everything
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: cloudgate-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --loglevel warning
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cloudgate-cassandra
+    restart: unless-stopped
+    ports:
+      - "9042:9042"
+    environment:
+      CASSANDRA_CLUSTER_NAME: cloudgate-local
+      CASSANDRA_DC: datacenter1
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # Optional: Prometheus for local metrics scraping
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: cloudgate-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=7d"
+
+  # Optional: Grafana for SLO dashboards
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: cloudgate-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: cloudgate
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+
+volumes:
+  redis_data:
+  cassandra_data:
+  grafana_data:

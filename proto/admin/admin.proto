@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package admin.v1;
+
+option go_package = "github.com/aryaMehta26/cloudgate/proto/admin;adminpb";
+
+// AdminService provides hot-reload APIs for tenant policies.
+// Changes take effect immediately without restarting the gateway.
+service AdminService {
+  // UpdatePolicy creates or replaces a tenant's routing and rate-limit policy.
+  rpc UpdatePolicy(UpdatePolicyRequest) returns (UpdatePolicyResponse);
+
+  // GetPolicy retrieves the current policy for a tenant.
+  rpc GetPolicy(GetPolicyRequest) returns (GetPolicyResponse);
+
+  // ListTenants returns all registered tenant IDs.
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+}
+
+// ── UpdatePolicy ──────────────────────────────────────────────────────────────
+
+message UpdatePolicyRequest {
+  string tenant_id      = 1;
+  repeated string upstreams = 2;
+
+  // Token bucket: requests per second + burst capacity
+  int32 rps_limit = 3;
+  int32 burst     = 4;
+
+  // Sliding window: max_in_window requests per window_secs seconds
+  int32 window_secs   = 5;
+  int32 max_in_window = 6;
+
+  // Bulkhead: max concurrent requests
+  int32 bulkhead_max = 7;
+
+  // Circuit breaker
+  int32 cb_failure_threshold  = 8;
+  int32 cb_open_timeout_ms    = 9;
+  int32 cb_success_threshold  = 10;
+}
+
+message UpdatePolicyResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+// ── GetPolicy ─────────────────────────────────────────────────────────────────
+
+message GetPolicyRequest {
+  string tenant_id = 1;
+}
+
+message GetPolicyResponse {
+  string tenant_id             = 1;
+  repeated string upstreams    = 2;
+  int32 rps_limit              = 3;
+  int32 burst                  = 4;
+  int32 bulkhead_max           = 5;
+  int32 cb_failure_threshold   = 6;
+  int32 cb_open_timeout_ms     = 7;
+  int32 cb_success_threshold   = 8;
+}
+
+// ── ListTenants ───────────────────────────────────────────────────────────────
+
+message ListTenantsRequest {}
+
+message ListTenantsResponse {
+  repeated string tenant_ids = 1;
+}

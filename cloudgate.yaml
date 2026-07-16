@@ -1,0 +1,46 @@
+server:
+  addr: ":8080"
+  metrics_addr: ":9090"
+
+redis:
+  addrs:
+    - "localhost:6379"
+  db: 0
+
+cassandra:
+  hosts:
+    - "localhost"
+  keyspace: "cloudgate"
+
+admin:
+  grpc_addr: ":50051"
+
+# Sample tenants — replace with your actual upstream services
+tenants:
+  - id: "tenant-acme"
+    upstreams:
+      - "http://localhost:9999"   # point to any local HTTP server for testing
+    rate_limit:
+      requests_per_second: 100
+      burst: 200
+      window_seconds: 10
+      max_in_window: 500
+    circuit_breaker:
+      failure_threshold: 5
+      open_timeout: "10s"
+      success_threshold: 2
+    bulkhead_max: 50
+
+  - id: "tenant-beta"
+    upstreams:
+      - "http://localhost:9998"
+    rate_limit:
+      requests_per_second: 500
+      burst: 1000
+      window_seconds: 1
+      max_in_window: 1000
+    circuit_breaker:
+      failure_threshold: 10
+      open_timeout: "5s"
+      success_threshold: 3
+    bulkhead_max: 200
