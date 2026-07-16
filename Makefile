@@ -86,9 +86,33 @@ proto:
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		proto/admin/admin.proto
 
+## check: Run fmt, vet, lint, and race tests in one shot (use before every PR)
+check: fmt vet lint test-race
+
+## bench-save: Save current benchmark as baseline for comparison
+bench-save:
+	$(GO) test ./... -bench=. -benchmem -run='^$$' | tee bench-baseline.txt
+	@echo "Baseline saved to bench-baseline.txt"
+
+## bench-compare: Compare current benchmarks against baseline
+bench-compare:
+	$(GO) test ./... -bench=. -benchmem -run='^$$' | tee bench-current.txt
+	@if command -v benchcmp > /dev/null; then \
+		benchcmp bench-baseline.txt bench-current.txt; \
+	else \
+		echo "Install benchcmp: go install golang.org/x/tools/cmd/benchcmp@latest"; \
+	fi
+
+## install-tools: Install all required development tools
+install-tools:
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/tools/cmd/benchcmp@latest
+	@echo "All tools installed."
+
 ## clean: Remove build artifacts
 clean:
-	rm -rf bin coverage.out coverage.html
+	rm -rf bin coverage.out coverage.html bench-baseline.txt bench-current.txt
 
 ## help: Print this help message
 help:
