@@ -31,5 +31,9 @@ secrets/
 kubeconfig
 kubeconfig.yaml
 
+# Benchmark output (use make bench-save / bench-compare)
+bench-baseline.txt
+bench-current.txt
+
 # Local config overrides (use cloudgate.yaml.example as template)
 cloudgate.local.yaml
