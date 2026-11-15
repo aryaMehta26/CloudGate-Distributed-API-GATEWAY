@@ -410,6 +410,19 @@ grpcurl -plaintext -d '{"tenant_id": "tenant-acme"}' \
 grpcurl -plaintext localhost:50051 admin.v1.AdminService/ListTenants
 ```
 
+**How a change reaches every replica.** `UpdatePolicy` validates the policy
+(absolute http(s) upstreams, positive limits; otherwise `InvalidArgument`), then
+writes it to Redis and publishes the tenant ID on `cg:tenant-updates` in the
+same pipeline. Every gateway replica subscribes to that channel at startup,
+evicts its cached policy, and drops the tenant's runtime; the next request for
+the tenant rebuilds its limiters, circuit breaker, bulkhead, and upstream
+proxies from Redis. Tenants created only through the API (not in
+`cloudgate.yaml`) are loaded from Redis on their first request. Requests rotate
+round-robin across a tenant's upstreams.
+
+The stubs in `proto/admin` are generated (`make proto`, pinned plugin versions
+in `make install-tools`), and CI fails if they drift from `admin.proto`.
+
 Or use the seed script to bulk-load:
 ```bash
 ./scripts/seed_policies.sh localhost:50051
