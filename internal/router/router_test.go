@@ -142,3 +142,40 @@ func TestLoadsTenantCreatedThroughStore(t *testing.T) {
 		t.Fatalf("after create: %d %q", w.Code, w.Body.String())
 	}
 }
+
+// A policy change made through any replica's store must reach this gateway's
+// runtimes: here the tenant moves to a new upstream while traffic flows.
+func TestPolicyUpdatesReachRunningGateway(t *testing.T) {
+	oldUp := upstream(t, "old", http.StatusOK)
+	newUp := upstream(t, "new", http.StatusOK)
+	h := newHarness(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ready := make(chan struct{})
+	go h.gw.WatchPolicyUpdates(ctx, ready)
+	<-ready
+
+	// A second store stands in for another replica's admin server.
+	other := tenant.NewRedisStore(h.rdb, zap.NewNop())
+	p := &tenant.Policy{TenantID: "acme", Upstreams: []string{oldUp.URL}, RPSLimit: 10, Burst: 10, WindowSecs: 60,
+		MaxInWindow: 100, BulkheadMax: 4, CBFailures: 3, CBOpenTimeoutMs: 1000, CBSuccesses: 1}
+	if err := other.Set(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	if w := h.do(t, "acme", "/"); w.Body.String() != "old" {
+		t.Fatalf("got %q", w.Body.String())
+	}
+	updated := *p
+	updated.Upstreams = []string{newUp.URL}
+	if err := other.Set(ctx, &updated); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if h.do(t, "acme", "/").Body.String() == "new" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("policy update never reached the running gateway")
+}

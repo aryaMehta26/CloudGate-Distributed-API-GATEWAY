@@ -17,6 +17,9 @@ import (
 const (
 	tenantKeyPrefix = "cg:tenant:"
 	tenantIndexKey  = "cg:tenants"
+	// UpdatesChannel carries the ID of every tenant whose policy changed, so
+	// each gateway replica can drop its cached copy.
+	UpdatesChannel = "cg:tenant-updates"
 )
 
 // Policy is the runtime policy for a tenant, stored in Redis and
@@ -103,6 +106,7 @@ func (s *Store) Set(ctx context.Context, p *Policy) error {
 	// 24h TTL silently dropped tenants that were still listed in the index.)
 	pipe.Set(ctx, key, data, 0)
 	pipe.SAdd(ctx, tenantIndexKey, p.TenantID)
+	pipe.Publish(ctx, UpdatesChannel, p.TenantID)
 
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("redis pipeline: %w", err)
@@ -122,6 +126,7 @@ func (s *Store) Delete(ctx context.Context, tenantID string) error {
 	pipe := s.rdb.Client().Pipeline()
 	pipe.Del(ctx, key)
 	pipe.SRem(ctx, tenantIndexKey, tenantID)
+	pipe.Publish(ctx, UpdatesChannel, tenantID)
 	if _, err := pipe.Exec(ctx); err != nil {
 		return fmt.Errorf("redis pipeline: %w", err)
 	}
@@ -143,6 +148,36 @@ func (s *Store) Invalidate(tenantID string) {
 	s.mu.Lock()
 	delete(s.cache, tenantID)
 	s.mu.Unlock()
+}
+
+// Watch subscribes to policy changes made by any replica. For each changed
+// tenant it evicts the local cache entry and then calls onChange. It blocks
+// until ctx is cancelled. ready, if non-nil, is closed once the subscription
+// is active.
+func (s *Store) Watch(ctx context.Context, ready chan<- struct{}, onChange func(tenantID string)) error {
+	sub := s.rdb.Client().Subscribe(ctx, UpdatesChannel)
+	defer sub.Close()
+	if _, err := sub.Receive(ctx); err != nil { // wait for the subscription confirmation
+		return fmt.Errorf("subscribe %s: %w", UpdatesChannel, err)
+	}
+	if ready != nil {
+		close(ready)
+	}
+	ch := sub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case msg, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			s.Invalidate(msg.Payload)
+			if onChange != nil {
+				onChange(msg.Payload)
+			}
+		}
+	}
 }
 
 // load fetches a policy from Redis and populates the cache.

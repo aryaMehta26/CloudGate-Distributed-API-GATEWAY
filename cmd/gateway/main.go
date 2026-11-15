@@ -59,6 +59,15 @@ func main() {
 		log.Fatal("invalid tenant configuration", zap.Error(err))
 	}
 
+	// Apply policy changes from the admin API on every replica.
+	watchCtx, stopWatch := context.WithCancel(context.Background())
+	defer stopWatch()
+	go func() {
+		if err := mux.WatchPolicyUpdates(watchCtx, nil); err != nil {
+			log.Error("policy update watcher stopped", zap.Error(err))
+		}
+	}()
+
 	// ── Middleware chain ──────────────────────────────────────────────────────
 	handler := middleware.Chain(
 		mux,

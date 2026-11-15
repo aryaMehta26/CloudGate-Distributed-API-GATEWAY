@@ -192,6 +192,18 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// WatchPolicyUpdates applies policy changes published by any replica's admin
+// API: the tenant's runtime is dropped and rebuilt from Redis on its next
+// request. It blocks until ctx is cancelled; run it in a goroutine.
+func (g *Gateway) WatchPolicyUpdates(ctx context.Context, ready chan<- struct{}) error {
+	return g.store.Watch(ctx, ready, func(tenantID string) {
+		g.mu.Lock()
+		delete(g.runtimes, tenantID)
+		g.mu.Unlock()
+		g.log.Info("tenant policy changed; runtime will reload", zap.String("tenant", tenantID))
+	})
+}
+
 // getRuntime returns the runtime for a tenant. On a miss it loads the policy
 // from the Redis-backed store, so tenants created through the admin API serve
 // traffic without a restart.
