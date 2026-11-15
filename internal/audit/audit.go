@@ -8,6 +8,7 @@ package audit
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/aryaMehta26/cloudgate/pkg/cassandra"
@@ -44,12 +45,15 @@ type Writer struct {
 	done          chan struct{}
 	batchSize     int
 	flushInterval time.Duration
-	insertStmt    *gocql.Query
+	stopped       sync.WaitGroup
+	stopOnce      sync.Once
+	// write persists one batch; it is writeBatch except in tests.
+	write func([]Event) error
 }
 
 // New creates a new Writer. Call Start() before using it.
 func New(cass *cassandra.Client, log *zap.Logger) *Writer {
-	return &Writer{
+	w := &Writer{
 		cass:          cass,
 		log:           log,
 		queue:         make(chan Event, defaultQueueSize),
@@ -57,16 +61,25 @@ func New(cass *cassandra.Client, log *zap.Logger) *Writer {
 		batchSize:     defaultBatchSize,
 		flushInterval: defaultFlushInterval,
 	}
+	w.write = w.writeBatch
+	return w
 }
 
-// Start initializes the prepared statement and launches the background flusher.
+// Start launches the background flusher.
 func (w *Writer) Start() {
-	go w.flusher()
+	w.stopped.Add(1)
+	go func() {
+		defer w.stopped.Done()
+		w.flusher()
+	}()
 }
 
-// Stop drains the queue and shuts down the background flusher.
+// Stop drains the queue, waits for the final batches to be written, and shuts
+// down the flusher. It is safe to call more than once. Without the wait, a
+// process exiting right after Stop lost every event still queued.
 func (w *Writer) Stop() {
-	close(w.done)
+	w.stopOnce.Do(func() { close(w.done) })
+	w.stopped.Wait()
 }
 
 // Log enqueues an audit event. It is non-blocking; if the queue is full the
@@ -93,7 +106,7 @@ func (w *Writer) flusher() {
 		if len(buf) == 0 {
 			return
 		}
-		if err := w.writeBatch(buf); err != nil {
+		if err := w.write(buf); err != nil {
 			w.log.Error("audit batch write failed", zap.Error(err), zap.Int("count", len(buf)))
 		}
 		buf = buf[:0]
