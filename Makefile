@@ -11,7 +11,7 @@ LDFLAGS         := -s -w
 GOLANGCI_LINT   := golangci-lint
 
 .PHONY: all build run-gateway run-admin test test-race bench lint fmt vet tidy \
-        deps-up deps-down proto clean help
+        deps-up deps-down proto proto-check clean help
 
 ## all: Build all binaries (default)
 all: build
@@ -86,6 +86,10 @@ proto:
 		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
 		proto/admin/admin.proto
 
+## proto-check: Fail if the committed gRPC code differs from what protoc generates
+proto-check: proto
+	git diff --exit-code -- proto/
+
 ## check: Run fmt, vet, lint, and race tests in one shot (use before every PR)
 check: fmt vet lint test-race
 
@@ -108,6 +112,8 @@ install-tools:
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install golang.org/x/tools/cmd/benchcmp@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
 	@echo "All tools installed."
 
 ## clean: Remove build artifacts
