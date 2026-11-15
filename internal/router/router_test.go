@@ -16,6 +16,7 @@ import (
 	"github.com/aryaMehta26/cloudgate/internal/metrics"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 )
@@ -279,5 +280,16 @@ func TestRoundRobinAcrossUpstreams(t *testing.T) {
 	}
 	if got != "abcabc" {
 		t.Fatalf("upstream order %q", got)
+	}
+}
+
+func TestRequestMetricCardinalityIndependentOfPath(t *testing.T) {
+	up := upstream(t, "ok", http.StatusOK)
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	for i := 0; i < 50; i++ {
+		h.do(t, "acme", "/orders/"+strconv.Itoa(i))
+	}
+	if n := testutil.CollectAndCount(h.gw.reg.RequestTotal); n != 1 {
+		t.Fatalf("50 distinct paths produced %d series", n)
 	}
 }

@@ -176,7 +176,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Metrics ───────────────────────────────────────────────────────────────
 	statusStr := strconv.Itoa(rw.statusCode)
-	g.reg.RequestTotal.WithLabelValues(tenantID, r.Method, r.URL.Path, statusStr).Inc()
+	g.reg.RequestTotal.WithLabelValues(tenantID, r.Method, statusStr).Inc()
 	g.reg.RequestDuration.WithLabelValues(tenantID, r.Method, statusStr).Observe(latency.Seconds())
 	g.reg.UpstreamRequestTotal.WithLabelValues(tenantID, target.url.Host, statusStr).Inc()
 	g.reg.UpstreamDuration.WithLabelValues(tenantID, target.url.Host).Observe(latency.Seconds())

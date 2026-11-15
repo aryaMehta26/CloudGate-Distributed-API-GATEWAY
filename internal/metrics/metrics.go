@@ -97,7 +97,9 @@ func NewRegistry() *Registry {
 		Subsystem: "gateway",
 		Name:      "requests_total",
 		Help:      "Total number of HTTP requests processed by the gateway.",
-	}, []string{"tenant", "method", "path", "status"})
+		// No raw URL path label: paths carry IDs (/orders/8f3a...), so every
+		// distinct URL created a new time series. Per-path detail is in the audit log.
+	}, []string{"tenant", "method", "status"})
 
 	r.RequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "cloudgate",
