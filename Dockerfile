@@ -4,7 +4,10 @@
 # Stage 2: Runtime (minimal distroless image)
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM golang:1.22-alpine AS builder
+# Build on the runner's native platform and cross-compile for each target, so
+# the arm64 image really contains arm64 binaries (GOARCH was hardcoded to amd64).
+FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+ARG TARGETOS TARGETARCH
 
 WORKDIR /workspace
 
@@ -16,11 +19,11 @@ RUN go mod download
 COPY . .
 
 # Build both binaries
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" \
     -o /bin/cloudgate-gateway ./cmd/gateway
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags="-s -w" \
     -o /bin/cloudgate-admin ./cmd/admin
 
@@ -29,7 +32,7 @@ FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 
 LABEL org.opencontainers.image.title="CloudGate"
 LABEL org.opencontainers.image.description="Distributed API Gateway with rate limiting and circuit breaker"
-LABEL org.opencontainers.image.source="https://github.com/aryaMehta26/cloudgate"
+LABEL org.opencontainers.image.source="https://github.com/aryaMehta26/CloudGate-Distributed-API-GATEWAY"
 LABEL org.opencontainers.image.licenses="MIT"
 
 COPY --from=builder /bin/cloudgate-gateway /cloudgate-gateway
