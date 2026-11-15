@@ -3,6 +3,7 @@ package tenant
 
 import (
 	"context"
+	"math"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -71,15 +72,29 @@ func (s *AdminServer) GetPolicy(ctx context.Context, req *adminpb.GetPolicyReque
 	return &adminpb.GetPolicyResponse{
 		TenantId:           p.TenantID,
 		Upstreams:          p.Upstreams,
-		RpsLimit:           int32(p.RPSLimit),
-		Burst:              int32(p.Burst),
-		WindowSecs:         int32(p.WindowSecs),
-		MaxInWindow:        int32(p.MaxInWindow),
-		BulkheadMax:        int32(p.BulkheadMax),
-		CbFailureThreshold: int32(p.CBFailures),
-		CbOpenTimeoutMs:    int32(p.CBOpenTimeoutMs),
-		CbSuccessThreshold: int32(p.CBSuccesses),
+		RpsLimit:           toInt32(p.RPSLimit),
+		Burst:              toInt32(p.Burst),
+		WindowSecs:         toInt32(p.WindowSecs),
+		MaxInWindow:        toInt32(p.MaxInWindow),
+		BulkheadMax:        toInt32(p.BulkheadMax),
+		CbFailureThreshold: toInt32(p.CBFailures),
+		CbOpenTimeoutMs:    toInt32(p.CBOpenTimeoutMs),
+		CbSuccessThreshold: toInt32(p.CBSuccesses),
 	}, nil
+}
+
+// toInt32 converts a policy value for the int32 wire fields, saturating
+// instead of wrapping. Policies written by config or older clients could hold
+// values above MaxInt32, which int32() silently turned negative.
+func toInt32(v int) int32 {
+	switch {
+	case v > math.MaxInt32:
+		return math.MaxInt32
+	case v < math.MinInt32:
+		return math.MinInt32
+	default:
+		return int32(v)
+	}
 }
 
 // ListTenants returns all registered tenant IDs.
