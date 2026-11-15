@@ -293,3 +293,15 @@ func TestRequestMetricCardinalityIndependentOfPath(t *testing.T) {
 		t.Fatalf("50 distinct paths produced %d series", n)
 	}
 }
+
+func TestRateLimiterOutageFailsOpen(t *testing.T) {
+	up := upstream(t, "ok", http.StatusOK)
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	h.mr.Close() // Redis is down
+	if w := h.do(t, "acme", "/"); w.Code != http.StatusOK {
+		t.Fatalf("redis outage rejected traffic: %d", w.Code)
+	}
+	if v := testutil.ToFloat64(h.gw.reg.RateLimitTotal.WithLabelValues("acme", "composite", "error_allowed")); v != 1 {
+		t.Fatalf("error_allowed = %v", v)
+	}
+}

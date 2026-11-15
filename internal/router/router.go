@@ -142,7 +142,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rlKey := tenantID + ":" + clientIP(r)
 	allowed, err := rt.limiter.Allow(r.Context(), rlKey)
 	if err != nil {
-		g.log.Error("rate limiter error", zap.Error(err))
+		// Fail open: a Redis outage must not turn into a full API outage with
+		// every request rejected as 429. Bulkheads still cap concurrency.
+		g.log.Error("rate limiter error; allowing request", zap.Error(err))
+		g.reg.RateLimitTotal.WithLabelValues(tenantID, "composite", "error_allowed").Inc()
+		allowed = true
 	}
 	if !allowed {
 		decision := "denied"
