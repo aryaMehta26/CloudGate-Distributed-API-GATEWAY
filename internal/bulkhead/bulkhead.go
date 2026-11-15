@@ -37,11 +37,16 @@ func (b *Bulkhead) Acquire(ctx context.Context) (release func(), err error) {
 		b.mu.Lock()
 		b.current++
 		b.mu.Unlock()
+		// The release func is idempotent: a second call (e.g. a deferred release
+		// plus an explicit one) must not free another caller's slot or block.
+		var once sync.Once
 		return func() {
-			<-b.sem
-			b.mu.Lock()
-			b.current--
-			b.mu.Unlock()
+			once.Do(func() {
+				<-b.sem
+				b.mu.Lock()
+				b.current--
+				b.mu.Unlock()
+			})
 		}, nil
 	default:
 		return nil, ErrBulkheadFull
