@@ -128,8 +128,8 @@ end
 
 // SlidingWindow implements the Limiter interface using a Redis sorted set.
 type SlidingWindow struct {
-	rdb        *goredis.Client
-	windowSecs int
+	rdb         *goredis.Client
+	windowSecs  int
 	maxInWindow int
 }
 

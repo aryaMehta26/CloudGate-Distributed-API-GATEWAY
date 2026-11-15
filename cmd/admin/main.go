@@ -11,8 +11,8 @@ import (
 
 	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
-	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
+	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"

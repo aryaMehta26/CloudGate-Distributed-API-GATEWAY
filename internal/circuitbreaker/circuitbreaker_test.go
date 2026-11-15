@@ -29,8 +29,8 @@ func TestCircuitBreaker_ClosedToOpen(t *testing.T) {
 func TestCircuitBreaker_OpenToHalfOpen(t *testing.T) {
 	cb := New("test", 1, 50*time.Millisecond, 1)
 
-	cb.Allow()           //nolint:errcheck
-	cb.RecordFailure()   // trips to open
+	cb.Allow()         //nolint:errcheck
+	cb.RecordFailure() // trips to open
 
 	if cb.CurrentState() != StateOpen {
 		t.Fatal("expected Open state")

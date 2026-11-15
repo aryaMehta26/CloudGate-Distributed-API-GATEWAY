@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	tenantKeyPrefix  = "cg:tenant:"
-	tenantIndexKey   = "cg:tenants"
-	policyExpiry     = 24 * time.Hour
+	tenantKeyPrefix = "cg:tenant:"
+	tenantIndexKey  = "cg:tenants"
+	policyExpiry    = 24 * time.Hour
 )
 
 // Policy is the runtime policy for a tenant, stored in Redis and

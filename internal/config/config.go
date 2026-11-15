@@ -47,11 +47,11 @@ type AdminConfig struct {
 
 // TenantConfig defines upstream routing and rate-limit policy for a tenant.
 type TenantConfig struct {
-	ID              string         `mapstructure:"id"`
-	Upstreams       []string       `mapstructure:"upstreams"`
-	RateLimit       RateLimitConf  `mapstructure:"rate_limit"`
-	CircuitBreaker  CBConf         `mapstructure:"circuit_breaker"`
-	BulkheadMax     int            `mapstructure:"bulkhead_max"`
+	ID             string        `mapstructure:"id"`
+	Upstreams      []string      `mapstructure:"upstreams"`
+	RateLimit      RateLimitConf `mapstructure:"rate_limit"`
+	CircuitBreaker CBConf        `mapstructure:"circuit_breaker"`
+	BulkheadMax    int           `mapstructure:"bulkhead_max"`
 }
 
 // RateLimitConf holds rate limiting configuration for a tenant.
@@ -69,11 +69,11 @@ type RateLimitConf struct {
 // CBConf holds circuit breaker configuration.
 type CBConf struct {
 	// Consecutive failures before opening
-	FailureThreshold int           `mapstructure:"failure_threshold"`
+	FailureThreshold int `mapstructure:"failure_threshold"`
 	// How long to stay open before trying half-open
-	OpenTimeout      time.Duration `mapstructure:"open_timeout"`
+	OpenTimeout time.Duration `mapstructure:"open_timeout"`
 	// Consecutive successes in half-open to close
-	SuccessThreshold int           `mapstructure:"success_threshold"`
+	SuccessThreshold int `mapstructure:"success_threshold"`
 }
 
 // Load reads configuration from cloudgate.yaml and environment variables.

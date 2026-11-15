@@ -64,14 +64,14 @@ func (s *AdminServer) GetPolicy(ctx context.Context, req *adminpb.GetPolicyReque
 	}
 
 	return &adminpb.GetPolicyResponse{
-		TenantId:            p.TenantID,
-		Upstreams:           p.Upstreams,
-		RpsLimit:            int32(p.RPSLimit),
-		Burst:               int32(p.Burst),
-		BulkheadMax:         int32(p.BulkheadMax),
-		CbFailureThreshold:  int32(p.CBFailures),
-		CbOpenTimeoutMs:     int32(p.CBOpenTimeoutMs),
-		CbSuccessThreshold:  int32(p.CBSuccesses),
+		TenantId:           p.TenantID,
+		Upstreams:          p.Upstreams,
+		RpsLimit:           int32(p.RPSLimit),
+		Burst:              int32(p.Burst),
+		BulkheadMax:        int32(p.BulkheadMax),
+		CbFailureThreshold: int32(p.CBFailures),
+		CbOpenTimeoutMs:    int32(p.CBOpenTimeoutMs),
+		CbSuccessThreshold: int32(p.CBSuccesses),
 	}, nil
 }
 
