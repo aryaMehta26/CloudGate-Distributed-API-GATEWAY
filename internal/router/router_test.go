@@ -199,3 +199,17 @@ func TestRateLimitIsPerClientIPNotPerConnection(t *testing.T) {
 		t.Fatalf("new connections bypassed the limit: %v", codes)
 	}
 }
+
+func TestUnreachableUpstreamCountsOneFailurePerRequest(t *testing.T) {
+	dead := httptest.NewServer(http.NotFoundHandler())
+	dead.Close()                                       // connections are refused
+	h := newHarness(t, tenantConfig("acme", dead.URL)) // FailureThreshold: 3
+	for i := 0; i < 3; i++ {
+		if w := h.do(t, "acme", "/"); w.Code != http.StatusBadGateway || w.Body.String() == "upstream unavailable (circuit open)\n" {
+			t.Fatalf("request %d: circuit opened before the threshold (%d %q)", i, w.Code, w.Body.String())
+		}
+	}
+	if w := h.do(t, "acme", "/"); w.Body.String() != "upstream unavailable (circuit open)\n" {
+		t.Fatalf("circuit should be open after 3 failures: %q", w.Body.String())
+	}
+}

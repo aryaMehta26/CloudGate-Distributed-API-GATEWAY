@@ -158,7 +158,6 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			req.Header.Set("X-Request-ID", r.Header.Get("X-Request-ID"))
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
-			rt.cb.RecordFailure()
 			g.reg.UpstreamErrors.WithLabelValues(tenantID, rt.upstream.Host, "proxy_error").Inc()
 			g.log.Error("upstream proxy error", zap.Error(err), zap.String("upstream", rt.upstream.Host))
 			http.Error(w, "bad gateway", http.StatusBadGateway)
@@ -167,6 +166,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	proxy.ServeHTTP(rw, r)
 
 	latency := time.Since(start)
+	// Exactly one circuit-breaker outcome per request. Proxy errors reach here
+	// as a 502 from ErrorHandler; recording them there too counted every
+	// connection failure twice and opened the circuit at half the threshold.
 	if rw.statusCode < 500 {
 		rt.cb.RecordSuccess()
 	} else {
