@@ -344,3 +344,12 @@ func TestStreamsFlushedResponses(t *testing.T) {
 		t.Fatal("event was buffered instead of streamed")
 	}
 }
+
+func TestBulkheadGaugeReturnsToZero(t *testing.T) {
+	up := upstream(t, "ok", http.StatusOK)
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	h.do(t, "acme", "/")
+	if v := testutil.ToFloat64(h.gw.reg.BulkheadCurrent.WithLabelValues("acme")); v != 0 {
+		t.Fatalf("bulkhead gauge stuck at %v after the request finished", v)
+	}
+}

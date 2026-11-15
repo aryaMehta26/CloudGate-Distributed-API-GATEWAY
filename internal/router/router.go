@@ -135,8 +135,14 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "too many concurrent requests", http.StatusServiceUnavailable)
 		return
 	}
-	defer release()
-	g.reg.BulkheadCurrent.WithLabelValues(tenantID).Set(float64(rt.bh.Current()))
+	gauge := g.reg.BulkheadCurrent.WithLabelValues(tenantID)
+	gauge.Set(float64(rt.bh.Current()))
+	defer func() {
+		release()
+		// Update on release too; setting it only on acquire left the gauge at
+		// its last peak after traffic stopped.
+		gauge.Set(float64(rt.bh.Current()))
+	}()
 
 	// ── Rate limiting ─────────────────────────────────────────────────────────
 	rlKey := tenantID + ":" + clientIP(r)
