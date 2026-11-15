@@ -230,3 +230,40 @@ func TestForwardedForAppendsClientIP(t *testing.T) {
 		t.Fatalf("X-Forwarded-For = %q", got)
 	}
 }
+
+func TestForwardsRequestID(t *testing.T) {
+	var got string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Request-ID")
+	}))
+	defer up.Close()
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(TenantHeader, "acme")
+	req.Header.Set("X-Request-ID", "req-123")
+	h.gw.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "req-123" {
+		t.Fatalf("X-Request-ID = %q", got)
+	}
+}
+
+func BenchmarkProxy(b *testing.B) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer up.Close()
+	mr := miniredis.RunT(b)
+	rdb := redis.Wrap(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
+	defer rdb.Close()
+	tc := tenantConfig("acme", up.URL)
+	tc.RateLimit = config.RateLimitConf{RequestsPerSecond: 1 << 30, Burst: 1 << 30, WindowSeconds: 1, MaxInWindow: 1 << 30}
+	gw, err := New(&config.Config{Tenants: []config.TenantConfig{tc}}, rdb, metrics.NewRegistry(), &auditRecorder{}, zap.NewNop())
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(TenantHeader, "acme")
+		gw.ServeHTTP(httptest.NewRecorder(), req)
+	}
+}

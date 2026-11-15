@@ -41,6 +41,7 @@ type tenantRuntime struct {
 	cb       *circuitbreaker.CircuitBreaker
 	bh       *bulkhead.Bulkhead
 	upstream *url.URL // currently selected upstream (round-robin simplified)
+	proxy    *httputil.ReverseProxy
 }
 
 // AuditLogger receives one event per proxied request. *audit.Writer
@@ -149,23 +150,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Reverse proxy ─────────────────────────────────────────────────────────
 	rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-	proxy := &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			req.URL.Scheme = rt.upstream.Scheme
-			req.URL.Host = rt.upstream.Host
-			req.Host = rt.upstream.Host
-			// X-Forwarded-For is left to ReverseProxy, which appends the
-			// client IP to any existing chain. Setting it here replaced the
-			// chain and produced "ip:port, ip".
-			req.Header.Set("X-Request-ID", r.Header.Get("X-Request-ID"))
-		},
-		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
-			g.reg.UpstreamErrors.WithLabelValues(tenantID, rt.upstream.Host, "proxy_error").Inc()
-			g.log.Error("upstream proxy error", zap.Error(err), zap.String("upstream", rt.upstream.Host))
-			http.Error(w, "bad gateway", http.StatusBadGateway)
-		},
-	}
-	proxy.ServeHTTP(rw, r)
+	rt.proxy.ServeHTTP(rw, r)
 
 	latency := time.Since(start)
 	// Exactly one circuit-breaker outcome per request. Proxy errors reach here
@@ -271,7 +256,27 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) (*tenantRuntime, error) {
 		cb:       cb,
 		bh:       bh,
 		upstream: upstreamURL,
+		proxy:    g.newProxy(p.TenantID, upstreamURL),
 	}, nil
+}
+
+// newProxy builds one reverse proxy per tenant upstream, reused by every
+// request; building it per request allocated a proxy and two closures each
+// time. The incoming request's headers, including X-Request-ID, are forwarded
+// as-is, and ReverseProxy appends the client IP to X-Forwarded-For.
+func (g *Gateway) newProxy(tenantID string, target *url.URL) *httputil.ReverseProxy {
+	return &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.Host = target.Host
+		},
+		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+			g.reg.UpstreamErrors.WithLabelValues(tenantID, target.Host, "proxy_error").Inc()
+			g.log.Error("upstream proxy error", zap.Error(err), zap.String("upstream", target.Host))
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+		},
+	}
 }
 
 // clientIP returns the caller's IP without the port. Keying limits on
