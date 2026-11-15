@@ -213,3 +213,20 @@ func TestUnreachableUpstreamCountsOneFailurePerRequest(t *testing.T) {
 		t.Fatalf("circuit should be open after 3 failures: %q", w.Body.String())
 	}
 }
+
+func TestForwardedForAppendsClientIP(t *testing.T) {
+	var got string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Forwarded-For")
+	}))
+	defer up.Close()
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "203.0.113.7:51000"
+	req.Header.Set(TenantHeader, "acme")
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
+	h.gw.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "192.0.2.1, 203.0.113.7" {
+		t.Fatalf("X-Forwarded-For = %q", got)
+	}
+}

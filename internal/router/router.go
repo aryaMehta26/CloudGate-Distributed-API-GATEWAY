@@ -154,7 +154,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			req.URL.Scheme = rt.upstream.Scheme
 			req.URL.Host = rt.upstream.Host
 			req.Host = rt.upstream.Host
-			req.Header.Set("X-Forwarded-For", r.RemoteAddr)
+			// X-Forwarded-For is left to ReverseProxy, which appends the
+			// client IP to any existing chain. Setting it here replaced the
+			// chain and produced "ip:port, ip".
 			req.Header.Set("X-Request-ID", r.Header.Get("X-Request-ID"))
 		},
 		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
