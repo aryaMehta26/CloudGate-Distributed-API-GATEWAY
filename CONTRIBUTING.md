@@ -17,7 +17,7 @@ Be respectful. Disagreements on implementation details are welcome; personal att
 git clone git@github.com:<your-handle>/cloudgate.git
 cd cloudgate
 
-# 2. Install Go 1.22+
+# 2. Install Go 1.26+
 brew install go      # macOS
 # or download from https://go.dev/dl/
 

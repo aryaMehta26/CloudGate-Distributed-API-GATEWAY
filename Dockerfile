@@ -6,7 +6,7 @@
 
 # Build on the runner's native platform and cross-compile for each target, so
 # the arm64 image really contains arm64 binaries (GOARCH was hardcoded to amd64).
-FROM --platform=$BUILDPLATFORM golang:1.22-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.11-alpine AS builder
 ARG TARGETOS TARGETARCH
 
 WORKDIR /workspace

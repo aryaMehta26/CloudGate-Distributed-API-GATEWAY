@@ -21,7 +21,7 @@
 [![Security Scan](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml/badge.svg)](https://github.com/aryaMehta26/cloudgate/actions/workflows/security.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/aryaMehta26/cloudgate)](https://goreportcard.com/report/github.com/aryaMehta26/cloudgate)
 [![codecov](https://codecov.io/gh/aryaMehta26/cloudgate/branch/main/graph/badge.svg)](https://codecov.io/gh/aryaMehta26/cloudgate)
-[![Go Version](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
+[![Go Version](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-22c55e.svg)](./LICENSE)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-6366f1.svg)](./CONTRIBUTING.md)
 
@@ -117,7 +117,7 @@ Error rate:     0.00%
 # macOS
 brew install go docker grpcurl wrk
 
-# Go 1.22+
+# Go 1.26+
 go version
 ```
 
