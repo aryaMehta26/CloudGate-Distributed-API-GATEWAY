@@ -10,6 +10,7 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httputil"
@@ -191,8 +192,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// getRuntime returns the runtime for a tenant, building it on cache miss.
-func (g *Gateway) getRuntime(ctx interface{ Value(any) any }, tenantID string) (*tenantRuntime, error) {
+// getRuntime returns the runtime for a tenant. On a miss it loads the policy
+// from the Redis-backed store, so tenants created through the admin API serve
+// traffic without a restart.
+func (g *Gateway) getRuntime(ctx context.Context, tenantID string) (*tenantRuntime, error) {
 	g.mu.RLock()
 	rt, ok := g.runtimes[tenantID]
 	g.mu.RUnlock()
@@ -200,9 +203,23 @@ func (g *Gateway) getRuntime(ctx interface{ Value(any) any }, tenantID string) (
 		return rt, nil
 	}
 
-	// This should rarely happen in production (tenants are pre-warmed or loaded from Redis).
-	g.log.Warn("tenant runtime cache miss — loading from redis", zap.String("tenant", tenantID))
-	return nil, fmt.Errorf("tenant %q not configured", tenantID)
+	p, err := g.store.Get(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	built, err := g.buildRuntime(p)
+	if err != nil {
+		return nil, fmt.Errorf("tenant %q has an invalid policy: %w", tenantID, err)
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if rt, ok := g.runtimes[tenantID]; ok { // another request won the race
+		return rt, nil
+	}
+	g.runtimes[tenantID] = built
+	g.log.Info("loaded tenant policy from redis", zap.String("tenant", tenantID))
+	return built, nil
 }
 
 // buildRuntime constructs all per-tenant runtime objects from a validated policy.

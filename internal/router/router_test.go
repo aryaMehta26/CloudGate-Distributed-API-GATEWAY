@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"github.com/aryaMehta26/cloudgate/internal/audit"
 	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/aryaMehta26/cloudgate/internal/metrics"
+	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -122,5 +124,21 @@ func TestNewRejectsInvalidTenantConfig(t *testing.T) {
 	bad := tenantConfig("acme") // no upstreams: used to panic on Upstreams[0]
 	if _, err := New(&config.Config{Tenants: []config.TenantConfig{bad}}, rdb, metrics.NewRegistry(), &auditRecorder{}, zap.NewNop()); err == nil {
 		t.Fatal("tenant without upstreams accepted")
+	}
+}
+
+func TestLoadsTenantCreatedThroughStore(t *testing.T) {
+	up := upstream(t, "new tenant", http.StatusOK)
+	h := newHarness(t)
+	if w := h.do(t, "fresh", "/"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("before create: %d", w.Code)
+	}
+	p := &tenant.Policy{TenantID: "fresh", Upstreams: []string{up.URL}, RPSLimit: 10, Burst: 10, WindowSecs: 60,
+		MaxInWindow: 100, BulkheadMax: 4, CBFailures: 3, CBOpenTimeoutMs: 1000, CBSuccesses: 1}
+	if err := h.gw.store.Set(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if w := h.do(t, "fresh", "/"); w.Code != http.StatusOK || w.Body.String() != "new tenant" {
+		t.Fatalf("after create: %d %q", w.Code, w.Body.String())
 	}
 }
