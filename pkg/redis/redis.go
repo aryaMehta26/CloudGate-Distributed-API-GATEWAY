@@ -6,8 +6,22 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aryaMehta26/cloudgate/internal/config"
 	goredis "github.com/redis/go-redis/v9"
+
+	"github.com/aryaMehta26/cloudgate/internal/config"
+)
+
+// Connection pool and retry settings.
+const (
+	maxRetries      = 3
+	minRetryBackoff = 8 * time.Millisecond
+	maxRetryBackoff = 512 * time.Millisecond
+	dialTimeout     = 5 * time.Second
+	ioTimeout       = 3 * time.Second
+	poolSize        = 50
+	minIdleConns    = 10
+	connMaxLifetime = 30 * time.Minute
+	pingTimeout     = 5 * time.Second
 )
 
 // Client wraps the go-redis client.
@@ -26,18 +40,18 @@ func New(cfg config.RedisConfig) (*Client, error) {
 		Addr:            addr,
 		Password:        cfg.Password,
 		DB:              cfg.DB,
-		MaxRetries:      3,
-		MinRetryBackoff: 8 * time.Millisecond,
-		MaxRetryBackoff: 512 * time.Millisecond,
-		DialTimeout:     5 * time.Second,
-		ReadTimeout:     3 * time.Second,
-		WriteTimeout:    3 * time.Second,
-		PoolSize:        50,
-		MinIdleConns:    10,
-		ConnMaxLifetime: 30 * time.Minute,
+		MaxRetries:      maxRetries,
+		MinRetryBackoff: minRetryBackoff,
+		MaxRetryBackoff: maxRetryBackoff,
+		DialTimeout:     dialTimeout,
+		ReadTimeout:     ioTimeout,
+		WriteTimeout:    ioTimeout,
+		PoolSize:        poolSize,
+		MinIdleConns:    minIdleConns,
+		ConnMaxLifetime: connMaxLifetime,
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), pingTimeout)
 	defer cancel()
 
 	if err := rdb.Ping(ctx).Err(); err != nil {

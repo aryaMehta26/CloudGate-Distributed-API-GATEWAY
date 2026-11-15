@@ -125,7 +125,7 @@ func BenchmarkTokenBucket(b *testing.B) {
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			tb.Allow(ctx, "bench:key") //nolint:errcheck
+			tb.Allow(ctx, "bench:key") //nolint:errcheck // benchmark measures throughput only
 		}
 	})
 }

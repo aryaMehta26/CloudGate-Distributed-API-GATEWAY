@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/gocql/gocql"
+
+	"github.com/aryaMehta26/cloudgate/internal/config"
 )
 
 // Client wraps a gocql session.
@@ -16,16 +17,25 @@ type Client struct {
 }
 
 // New creates a Cassandra client and applies the schema if needed.
+// Cluster timeouts and retry policy.
+const (
+	queryTimeout   = 15 * time.Second
+	connectTimeout = 10 * time.Second
+	numRetries     = 3
+	retryFloor     = 100 * time.Millisecond
+	retryCeiling   = 2 * time.Second
+)
+
 func New(cfg config.CassandraConfig) (*Client, error) {
 	cluster := gocql.NewCluster(cfg.Hosts...)
 	cluster.Keyspace = cfg.Keyspace
 	cluster.Consistency = gocql.LocalQuorum
-	cluster.Timeout = 15 * time.Second
-	cluster.ConnectTimeout = 10 * time.Second
+	cluster.Timeout = queryTimeout
+	cluster.ConnectTimeout = connectTimeout
 	cluster.RetryPolicy = &gocql.ExponentialBackoffRetryPolicy{
-		NumRetries: 3,
-		Min:        100 * time.Millisecond,
-		Max:        2 * time.Second,
+		NumRetries: numRetries,
+		Min:        retryFloor,
+		Max:        retryCeiling,
 	}
 	cluster.PoolConfig.HostSelectionPolicy = gocql.TokenAwareHostPolicy(gocql.RoundRobinHostPolicy())
 

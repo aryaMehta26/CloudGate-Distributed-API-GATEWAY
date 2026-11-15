@@ -21,6 +21,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/aryaMehta26/cloudgate/internal/audit"
 	"github.com/aryaMehta26/cloudgate/internal/bulkhead"
 	"github.com/aryaMehta26/cloudgate/internal/circuitbreaker"
@@ -29,7 +31,6 @@ import (
 	"github.com/aryaMehta26/cloudgate/internal/ratelimit"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
-	"go.uber.org/zap"
 )
 
 // TenantHeader is the HTTP header used to identify the tenant.
@@ -178,7 +179,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Exactly one circuit-breaker outcome per request. Proxy errors reach here
 	// as a 502 from ErrorHandler; recording them there too counted every
 	// connection failure twice and opened the circuit at half the threshold.
-	if rw.statusCode < 500 {
+	if rw.statusCode < http.StatusInternalServerError {
 		rt.cb.RecordSuccess()
 	} else {
 		rt.cb.RecordFailure()
@@ -206,7 +207,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // WatchPolicyUpdates applies policy changes published by any replica's admin
 // API: the tenant's runtime is dropped and rebuilt from Redis on its next
-// request. It blocks until ctx is cancelled; run it in a goroutine.
+// request. It blocks until ctx is canceled; run it in a goroutine.
 func (g *Gateway) WatchPolicyUpdates(ctx context.Context, ready chan<- struct{}) error {
 	return g.store.Watch(ctx, ready, func(tenantID string) {
 		g.mu.Lock()
@@ -296,7 +297,7 @@ func (g *Gateway) newProxy(tenantID string, target *url.URL) *httputil.ReversePr
 			req.URL.Host = target.Host
 			req.Host = target.Host
 		},
-		ErrorHandler: func(w http.ResponseWriter, req *http.Request, err error) {
+		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			g.reg.UpstreamErrors.WithLabelValues(tenantID, target.Host, "proxy_error").Inc()
 			g.log.Error("upstream proxy error", zap.Error(err), zap.String("upstream", target.Host))
 			http.Error(w, "bad gateway", http.StatusBadGateway)

@@ -11,15 +11,16 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	goredis "github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
 	"github.com/aryaMehta26/cloudgate/internal/audit"
 	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/aryaMehta26/cloudgate/internal/metrics"
 	"github.com/aryaMehta26/cloudgate/internal/middleware"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
-	"github.com/prometheus/client_golang/prometheus/testutil"
-	goredis "github.com/redis/go-redis/v9"
-	"go.uber.org/zap"
 )
 
 type auditRecorder struct {
@@ -63,12 +64,12 @@ func newHarness(t *testing.T, tenants ...config.TenantConfig) *harness {
 	return &harness{gw: gw, mr: mr, rdb: rdb, audit: rec}
 }
 
-func (h *harness) do(t *testing.T, tenant, path string) *httptest.ResponseRecorder {
+func (h *harness) do(t *testing.T, tenantID, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
 	req.RemoteAddr = "203.0.113.7:51000"
-	if tenant != "" {
-		req.Header.Set(TenantHeader, tenant)
+	if tenantID != "" {
+		req.Header.Set(TenantHeader, tenantID)
 	}
 	w := httptest.NewRecorder()
 	h.gw.ServeHTTP(w, req)
@@ -77,9 +78,9 @@ func (h *harness) do(t *testing.T, tenant, path string) *httptest.ResponseRecord
 
 func upstream(t *testing.T, body string, status int) *httptest.Server {
 	t.Helper()
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(status)
-		io.WriteString(w, body)
+		_, _ = io.WriteString(w, body)
 	}))
 	t.Cleanup(s.Close)
 	return s
@@ -155,7 +156,7 @@ func TestPolicyUpdatesReachRunningGateway(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	ready := make(chan struct{})
-	go h.gw.WatchPolicyUpdates(ctx, ready)
+	go func() { _ = h.gw.WatchPolicyUpdates(ctx, ready) }()
 	<-ready
 
 	// A second store stands in for another replica's admin server.
@@ -190,7 +191,7 @@ func TestRateLimitIsPerClientIPNotPerConnection(t *testing.T) {
 	h := newHarness(t, tc)
 	codes := []int{}
 	for port := 40000; port < 40004; port++ { // same IP, a new source port each time
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.RemoteAddr = "198.51.100.9:" + strconv.Itoa(port)
 		req.Header.Set(TenantHeader, "acme")
 		w := httptest.NewRecorder()
@@ -218,12 +219,12 @@ func TestUnreachableUpstreamCountsOneFailurePerRequest(t *testing.T) {
 
 func TestForwardedForAppendsClientIP(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Forwarded-For")
 	}))
 	defer up.Close()
 	h := newHarness(t, tenantConfig("acme", up.URL))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	req.RemoteAddr = "203.0.113.7:51000"
 	req.Header.Set(TenantHeader, "acme")
 	req.Header.Set("X-Forwarded-For", "192.0.2.1")
@@ -235,12 +236,12 @@ func TestForwardedForAppendsClientIP(t *testing.T) {
 
 func TestForwardsRequestID(t *testing.T) {
 	var got string
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Request-ID")
 	}))
 	defer up.Close()
 	h := newHarness(t, tenantConfig("acme", up.URL))
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	req.Header.Set(TenantHeader, "acme")
 	req.Header.Set("X-Request-ID", "req-123")
 	h.gw.ServeHTTP(httptest.NewRecorder(), req)
@@ -250,7 +251,7 @@ func TestForwardsRequestID(t *testing.T) {
 }
 
 func BenchmarkProxy(b *testing.B) {
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	up := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer up.Close()
 	mr := miniredis.RunT(b)
 	rdb := redis.Wrap(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
@@ -264,7 +265,7 @@ func BenchmarkProxy(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 		req.Header.Set(TenantHeader, "acme")
 		gw.ServeHTTP(httptest.NewRecorder(), req)
 	}
@@ -274,10 +275,10 @@ func TestRoundRobinAcrossUpstreams(t *testing.T) {
 	a := upstream(t, "a", http.StatusOK)
 	b := upstream(t, "b", http.StatusOK)
 	c := upstream(t, "c", http.StatusOK)
-	h := newHarness(t, tenantConfig("acme", a.URL, b.URL, c.URL))
+	h := newHarness(t, tenantConfig("rotating", a.URL, b.URL, c.URL))
 	got := ""
 	for i := 0; i < 6; i++ {
-		got += h.do(t, "acme", "/").Body.String()
+		got += h.do(t, "rotating", "/").Body.String()
 	}
 	if got != "abcabc" {
 		t.Fatalf("upstream order %q", got)
@@ -311,10 +312,10 @@ func TestRateLimiterOutageFailsOpen(t *testing.T) {
 // when the upstream response ends.
 func TestStreamsFlushedResponses(t *testing.T) {
 	release := make(chan struct{})
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		io.WriteString(w, "data: first\n\n")
-		http.NewResponseController(w).Flush()
+		_, _ = io.WriteString(w, "data: first\n\n")
+		_ = http.NewResponseController(w).Flush() //nolint:bodyclose // server-side writer, no response body
 		<-release
 	}))
 	defer up.Close()
@@ -322,9 +323,9 @@ func TestStreamsFlushedResponses(t *testing.T) {
 	gw := httptest.NewServer(middleware.Chain(h.gw, middleware.Logger(zap.NewNop())))
 	defer gw.Close()
 	defer close(release) // runs before the servers close, unblocking the upstream
-	req, _ := http.NewRequest(http.MethodGet, gw.URL, nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, gw.URL, http.NoBody)
 	req.Header.Set(TenantHeader, "acme")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:bodyclose // closed by the defer below
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -17,7 +17,7 @@ func TestLiveness_AlwaysOK(t *testing.T) {
 	// Inject a no-op logger to avoid nil panic
 	h.log = noopLogger()
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.Liveness(rec, req)
 
@@ -36,7 +36,7 @@ func TestLiveness_AlwaysOK(t *testing.T) {
 
 func TestReadiness_AllHealthy(t *testing.T) {
 	h := New(&mockPinger{err: nil}, noopLogger())
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.Readiness(rec, req)
 
@@ -47,7 +47,7 @@ func TestReadiness_AllHealthy(t *testing.T) {
 
 func TestReadiness_RedisDegraded(t *testing.T) {
 	h := New(&mockPinger{err: context.DeadlineExceeded}, noopLogger())
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody)
 	rec := httptest.NewRecorder()
 	h.Readiness(rec, req)
 
@@ -56,7 +56,9 @@ func TestReadiness_RedisDegraded(t *testing.T) {
 	}
 
 	var resp response
-	json.NewDecoder(rec.Body).Decode(&resp) //nolint:errcheck
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatal(err)
+	}
 	if resp.Status != "degraded" {
 		t.Fatalf("expected status degraded, got %q", resp.Status)
 	}

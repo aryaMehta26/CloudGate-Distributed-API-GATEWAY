@@ -11,9 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aryaMehta26/cloudgate/pkg/cassandra"
 	"github.com/gocql/gocql"
 	"go.uber.org/zap"
+
+	"github.com/aryaMehta26/cloudgate/pkg/cassandra"
 )
 
 const (
@@ -23,6 +24,8 @@ const (
 	defaultBatchSize = 100
 	// defaultFlushInterval is how often the background flusher drains the queue.
 	defaultFlushInterval = 5 * time.Millisecond
+	// batchWriteTimeout bounds one Cassandra batch write.
+	batchWriteTimeout = 20 * time.Millisecond
 )
 
 // Event represents a single request audit record.
@@ -168,7 +171,7 @@ func (w *Writer) writeBatch(events []Event) error {
 		)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), batchWriteTimeout)
 	defer cancel()
 
 	if err := session.ExecuteBatch(batch.WithContext(ctx)); err != nil {

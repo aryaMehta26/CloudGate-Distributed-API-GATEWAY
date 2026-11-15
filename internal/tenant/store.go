@@ -10,8 +10,9 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/aryaMehta26/cloudgate/pkg/redis"
 	"go.uber.org/zap"
+
+	"github.com/aryaMehta26/cloudgate/pkg/redis"
 )
 
 const (
@@ -152,7 +153,7 @@ func (s *Store) Invalidate(tenantID string) {
 
 // Watch subscribes to policy changes made by any replica. For each changed
 // tenant it evicts the local cache entry and then calls onChange. It blocks
-// until ctx is cancelled. ready, if non-nil, is closed once the subscription
+// until ctx is canceled. ready, if non-nil, is closed once the subscription
 // is active.
 func (s *Store) Watch(ctx context.Context, ready chan<- struct{}, onChange func(tenantID string)) error {
 	sub := s.rdb.Client().Subscribe(ctx, UpdatesChannel)

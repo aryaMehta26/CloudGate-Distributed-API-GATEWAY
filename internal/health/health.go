@@ -41,12 +41,19 @@ func New(redis Pinger, log *zap.Logger) *Handler {
 	}
 }
 
+const (
+	statusOK       = "ok"
+	statusDegraded = "degraded"
+	// readinessTimeout bounds each dependency check.
+	readinessTimeout = 2 * time.Second
+)
+
 // Liveness handles GET /healthz.
 // It always returns 200 as long as the process is running.
 func (h *Handler) Liveness(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response{ //nolint:errcheck
-		Status:    "ok",
+	json.NewEncoder(w).Encode(response{ //nolint:errcheck // client went away; nothing useful to do
+		Status:    statusOK,
 		UptimeSec: int64(time.Since(h.startedAt).Seconds()),
 	})
 }
@@ -55,7 +62,7 @@ func (h *Handler) Liveness(w http.ResponseWriter, _ *http.Request) {
 // It returns 200 only when all dependencies are reachable.
 // Returns 503 if any dependency is unavailable.
 func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), readinessTimeout)
 	defer cancel()
 
 	checks := make(map[string]string)
@@ -67,17 +74,17 @@ func (h *Handler) Readiness(w http.ResponseWriter, r *http.Request) {
 		healthy = false
 		h.log.Warn("readiness check: redis unreachable", zap.Error(err))
 	} else {
-		checks["redis"] = "ok"
+		checks["redis"] = statusOK
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if !healthy {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		checks["status"] = "degraded"
+		checks["status"] = statusDegraded
 	}
 
-	json.NewEncoder(w).Encode(response{ //nolint:errcheck
-		Status:    map[bool]string{true: "ok", false: "degraded"}[healthy],
+	json.NewEncoder(w).Encode(response{ //nolint:errcheck // client went away; nothing useful to do
+		Status:    map[bool]string{true: statusOK, false: statusDegraded}[healthy],
 		UptimeSec: int64(time.Since(h.startedAt).Seconds()),
 		Checks:    checks,
 	})

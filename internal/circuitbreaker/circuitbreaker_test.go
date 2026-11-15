@@ -29,7 +29,7 @@ func TestCircuitBreaker_ClosedToOpen(t *testing.T) {
 func TestCircuitBreaker_OpenToHalfOpen(t *testing.T) {
 	cb := New("test", 1, 50*time.Millisecond, 1)
 
-	cb.Allow()         //nolint:errcheck
+	cb.Allow()         //nolint:errcheck // only the state transition matters here
 	cb.RecordFailure() // trips to open
 
 	if cb.CurrentState() != StateOpen {
@@ -56,7 +56,7 @@ func TestCircuitBreaker_OpenToHalfOpen(t *testing.T) {
 func TestCircuitBreaker_HalfOpenToClose(t *testing.T) {
 	cb := New("test", 1, 10*time.Millisecond, 2)
 
-	cb.Allow()         //nolint:errcheck
+	cb.Allow()         //nolint:errcheck // only the state transition matters here
 	cb.RecordFailure() // open
 
 	time.Sleep(15 * time.Millisecond)
@@ -67,7 +67,7 @@ func TestCircuitBreaker_HalfOpenToClose(t *testing.T) {
 		t.Fatal("should still be half-open after 1 success (threshold=2)")
 	}
 
-	cb.Allow() //nolint:errcheck
+	cb.Allow() //nolint:errcheck // only the state transition matters here
 	cb.RecordSuccess()
 	if cb.CurrentState() != StateClosed {
 		t.Fatalf("expected Closed after 2 successes, got %s", cb.CurrentState())
@@ -77,7 +77,7 @@ func TestCircuitBreaker_HalfOpenToClose(t *testing.T) {
 func TestCircuitBreaker_HalfOpenFailureReopens(t *testing.T) {
 	cb := New("test", 1, 10*time.Millisecond, 1)
 
-	cb.Allow()         //nolint:errcheck
+	cb.Allow()         //nolint:errcheck // only the state transition matters here
 	cb.RecordFailure() // open
 
 	time.Sleep(15 * time.Millisecond)
@@ -92,15 +92,15 @@ func TestCircuitBreaker_HalfOpenFailureReopens(t *testing.T) {
 func TestCircuitBreaker_StateChangeCallback(t *testing.T) {
 	var transitions []string
 	cb := New("test-cb", 1, 10*time.Millisecond, 1)
-	cb.WithStateChangeCallback(func(name string, from, to State) {
+	cb.WithStateChangeCallback(func(_ string, from, to State) {
 		transitions = append(transitions, from.String()+"->"+to.String())
 	})
 
-	cb.Allow()         //nolint:errcheck
+	cb.Allow()         //nolint:errcheck // only the state transition matters here
 	cb.RecordFailure() // closed -> open
 
 	time.Sleep(15 * time.Millisecond)
-	cb.Allow()         //nolint:errcheck
+	cb.Allow()         //nolint:errcheck // only the state transition matters here
 	cb.RecordSuccess() // open -> half-open -> closed (2 transitions)
 
 	if len(transitions) < 2 {

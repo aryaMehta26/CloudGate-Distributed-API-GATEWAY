@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/aryaMehta26/cloudgate/pkg/redis"
-	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 	goredis "github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -15,6 +13,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+
+	"github.com/aryaMehta26/cloudgate/pkg/redis"
+	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 )
 
 func newTestStore(t *testing.T) (*Store, *miniredis.Miniredis) {
@@ -32,7 +33,7 @@ func newAdminClient(t *testing.T, store *Store) adminpb.AdminServiceClient {
 	lis := bufconn.Listen(1 << 20)
 	srv := grpc.NewServer()
 	adminpb.RegisterAdminServiceServer(srv, NewAdminServer(store, zap.NewNop()))
-	go srv.Serve(lis)
+	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),

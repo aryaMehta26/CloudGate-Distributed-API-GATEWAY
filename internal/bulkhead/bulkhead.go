@@ -20,18 +20,18 @@ type Bulkhead struct {
 	current int
 }
 
-// New creates a new Bulkhead that allows at most max concurrent operations.
-func New(max int) *Bulkhead {
+// New creates a new Bulkhead that allows at most limit concurrent operations.
+func New(limit int) *Bulkhead {
 	return &Bulkhead{
-		sem: make(chan struct{}, max),
-		max: max,
+		sem: make(chan struct{}, limit),
+		max: limit,
 	}
 }
 
 // Acquire attempts to acquire a slot in the bulkhead.
 // It returns a release function if successful, or ErrBulkheadFull immediately
 // if the bulkhead is at capacity (non-blocking).
-func (b *Bulkhead) Acquire(ctx context.Context) (release func(), err error) {
+func (b *Bulkhead) Acquire(_ context.Context) (release func(), err error) {
 	select {
 	case b.sem <- struct{}{}:
 		b.mu.Lock()

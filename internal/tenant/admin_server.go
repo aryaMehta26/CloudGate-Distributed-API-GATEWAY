@@ -4,10 +4,11 @@ package tenant
 import (
 	"context"
 
-	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
 )
 
 // AdminServer implements the gRPC AdminService for hot policy updates.

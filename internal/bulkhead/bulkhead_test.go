@@ -48,8 +48,8 @@ func TestReleaseIsIdempotent(t *testing.T) {
 }
 
 func TestNeverExceedsMaxUnderContention(t *testing.T) {
-	const max = 4
-	b := New(max)
+	const limit = 4
+	b := New(limit)
 	var inFlight, peak atomic.Int64
 	var wg sync.WaitGroup
 	for i := 0; i < 200; i++ {
@@ -72,7 +72,7 @@ func TestNeverExceedsMaxUnderContention(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	if peak.Load() > max || b.Current() != 0 {
-		t.Fatalf("peak %d (max %d), current %d", peak.Load(), max, b.Current())
+	if peak.Load() > limit || b.Current() != 0 {
+		t.Fatalf("peak %d (max %d), current %d", peak.Load(), limit, b.Current())
 	}
 }

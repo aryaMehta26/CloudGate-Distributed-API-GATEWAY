@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/aryaMehta26/cloudgate/internal/metrics"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+
+	"github.com/aryaMehta26/cloudgate/internal/metrics"
 )
 
 // Chain applies middleware in left-to-right order (outermost to innermost).
@@ -94,6 +95,9 @@ func Metrics(reg *metrics.Registry) func(http.Handler) http.Handler {
 	}
 }
 
+// corsMaxAgeSeconds lets browsers cache a preflight response for one day.
+const corsMaxAgeSeconds = 86400
+
 // CORS adds permissive CORS headers for development environments.
 // Replace with a strict policy before production use.
 func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
@@ -111,7 +115,7 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Tenant-ID, X-Request-ID, Authorization")
-				w.Header().Set("Access-Control-Max-Age", strconv.Itoa(86400))
+				w.Header().Set("Access-Control-Max-Age", strconv.Itoa(corsMaxAgeSeconds))
 			}
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)

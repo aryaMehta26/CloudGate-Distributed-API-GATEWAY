@@ -19,7 +19,7 @@ func TestChainOrder(t *testing.T) {
 		}
 	}
 	h := Chain(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { order += "h" }), mk("a"), mk("b"), mk("c"))
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	if order != "abch" {
 		t.Fatalf("order %q", order)
 	}
@@ -27,13 +27,13 @@ func TestChainOrder(t *testing.T) {
 
 func TestRequestIDGeneratesAndPreserves(t *testing.T) {
 	var seen string
-	h := RequestID()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { seen = r.Header.Get("X-Request-ID") }))
+	h := RequestID()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { seen = r.Header.Get("X-Request-ID") }))
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	if seen == "" || w.Header().Get("X-Request-ID") != seen {
 		t.Fatalf("generated id %q, response %q", seen, w.Header().Get("X-Request-ID"))
 	}
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	req.Header.Set("X-Request-ID", "given")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -45,7 +45,7 @@ func TestRequestIDGeneratesAndPreserves(t *testing.T) {
 func TestRecoveryReturns500(t *testing.T) {
 	h := Recovery(zap.NewNop())(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }))
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("code %d", w.Code)
 	}
@@ -58,20 +58,20 @@ func TestRecoveryRepanicsAbortHandler(t *testing.T) {
 			t.Fatalf("recovered %v, want http.ErrAbortHandler", rec)
 		}
 	}()
-	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", http.NoBody))
 	t.Fatal("ErrAbortHandler was swallowed")
 }
 
 func TestCORS(t *testing.T) {
-	h := CORS([]string{"https://app.example"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(299) }))
-	pre := httptest.NewRequest(http.MethodOptions, "/", nil)
+	h := CORS([]string{"https://app.example"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(299) }))
+	pre := httptest.NewRequest(http.MethodOptions, "/", http.NoBody)
 	pre.Header.Set("Origin", "https://app.example")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, pre)
 	if w.Code != http.StatusNoContent || w.Header().Get("Access-Control-Allow-Origin") != "https://app.example" {
 		t.Fatalf("preflight: %d %v", w.Code, w.Header())
 	}
-	other := httptest.NewRequest(http.MethodGet, "/", nil)
+	other := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
 	other.Header.Set("Origin", "https://evil.example")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, other)

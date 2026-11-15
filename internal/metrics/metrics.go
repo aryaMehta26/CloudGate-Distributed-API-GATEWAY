@@ -121,7 +121,7 @@ func NewRegistry() *Registry {
 		Subsystem: "gateway",
 		Name:      "response_size_bytes",
 		Help:      "HTTP response body size in bytes.",
-		Buckets:   prometheus.ExponentialBuckets(100, 10, 7),
+		Buckets:   prometheus.ExponentialBuckets(100, 10, 7), //nolint:mnd // 100 B to 100 MB in 7 decade buckets
 	}, []string{"tenant", "status"})
 
 	// ── Rate limiting ─────────────────────────────────────────────────────────
