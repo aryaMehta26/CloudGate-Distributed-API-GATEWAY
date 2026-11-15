@@ -289,13 +289,17 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) (*tenantRuntime, error) {
 // newProxy builds one reverse proxy per tenant upstream, reused by every
 // request; building it per request allocated a proxy and two closures each
 // time. The incoming request's headers, including X-Request-ID, are forwarded
-// as-is, and ReverseProxy appends the client IP to X-Forwarded-For.
+// as-is. Rewrite replaces the Director hook deprecated in Go 1.26.
 func (g *Gateway) newProxy(tenantID string, target *url.URL) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
-			req.URL.Scheme = target.Scheme
-			req.URL.Host = target.Host
-			req.Host = target.Host
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = target.Scheme
+			pr.Out.URL.Host = target.Host
+			pr.Out.Host = target.Host
+			// ReverseProxy strips inbound X-Forwarded-* before Rewrite; restore
+			// the client's chain so SetXForwarded appends to it.
+			pr.Out.Header["X-Forwarded-For"] = pr.In.Header["X-Forwarded-For"]
+			pr.SetXForwarded()
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 			g.reg.UpstreamErrors.WithLabelValues(tenantID, target.Host, "proxy_error").Inc()
