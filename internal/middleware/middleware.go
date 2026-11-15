@@ -62,6 +62,11 @@ func Recovery(log *zap.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if rec := recover(); rec != nil {
+					if rec == http.ErrAbortHandler {
+						// Deliberate abort (e.g. ReverseProxy on a broken
+						// upstream stream): let net/http drop the connection.
+						panic(rec)
+					}
 					log.Error("panic recovered",
 						zap.Any("panic", rec),
 						zap.String("stack", string(debug.Stack())),
