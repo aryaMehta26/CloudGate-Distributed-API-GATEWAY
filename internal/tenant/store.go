@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
 	"go.uber.org/zap"
@@ -16,7 +15,6 @@ import (
 const (
 	tenantKeyPrefix = "cg:tenant:"
 	tenantIndexKey  = "cg:tenants"
-	policyExpiry    = 24 * time.Hour
 )
 
 // Policy is the runtime policy for a tenant, stored in Redis and
@@ -72,7 +70,9 @@ func (s *Store) Set(ctx context.Context, p *Policy) error {
 
 	key := tenantKeyPrefix + p.TenantID
 	pipe := s.rdb.Client().Pipeline()
-	pipe.Set(ctx, key, data, policyExpiry)
+	// No expiry: a policy lives until it is replaced or deleted. (An earlier
+	// 24h TTL silently dropped tenants that were still listed in the index.)
+	pipe.Set(ctx, key, data, 0)
 	pipe.SAdd(ctx, tenantIndexKey, p.TenantID)
 
 	if _, err := pipe.Exec(ctx); err != nil {
