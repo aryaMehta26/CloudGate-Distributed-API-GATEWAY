@@ -319,3 +319,7 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap exposes the underlying writer to http.ResponseController, so
+// ReverseProxy can flush streamed responses (SSE, chunked) through the wrapper.
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }

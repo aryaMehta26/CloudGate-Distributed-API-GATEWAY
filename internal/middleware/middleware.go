@@ -139,3 +139,7 @@ func (sw *statusWriter) WriteHeader(code int) {
 	sw.code = code
 	sw.ResponseWriter.WriteHeader(code)
 }
+
+// Unwrap lets http.ResponseController reach Flush and Hijack on the
+// underlying writer.
+func (sw *statusWriter) Unwrap() http.ResponseWriter { return sw.ResponseWriter }

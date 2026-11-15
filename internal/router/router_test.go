@@ -14,6 +14,7 @@ import (
 	"github.com/aryaMehta26/cloudgate/internal/audit"
 	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/aryaMehta26/cloudgate/internal/metrics"
+	"github.com/aryaMehta26/cloudgate/internal/middleware"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -303,5 +304,43 @@ func TestRateLimiterOutageFailsOpen(t *testing.T) {
 	}
 	if v := testutil.ToFloat64(h.gw.reg.RateLimitTotal.WithLabelValues("acme", "composite", "error_allowed")); v != 1 {
 		t.Fatalf("error_allowed = %v", v)
+	}
+}
+
+// Server-sent events must reach the client as they are flushed upstream, not
+// when the upstream response ends.
+func TestStreamsFlushedResponses(t *testing.T) {
+	release := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: first\n\n")
+		http.NewResponseController(w).Flush()
+		<-release
+	}))
+	defer up.Close()
+	h := newHarness(t, tenantConfig("acme", up.URL))
+	gw := httptest.NewServer(middleware.Chain(h.gw, middleware.Logger(zap.NewNop())))
+	defer gw.Close()
+	defer close(release) // runs before the servers close, unblocking the upstream
+	req, _ := http.NewRequest(http.MethodGet, gw.URL, nil)
+	req.Header.Set(TenantHeader, "acme")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	got := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 64)
+		n, _ := resp.Body.Read(buf)
+		got <- string(buf[:n])
+	}()
+	select {
+	case s := <-got:
+		if s != "data: first\n\n" {
+			t.Fatalf("first chunk %q", s)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("event was buffered instead of streamed")
 	}
 }
