@@ -18,6 +18,9 @@ type Client struct {
 // New creates a new Redis client from the provided config.
 // It verifies connectivity with a PING before returning.
 func New(cfg config.RedisConfig) (*Client, error) {
+	if len(cfg.Addrs) == 0 || cfg.Addrs[0] == "" {
+		return nil, fmt.Errorf("redis: at least one address is required")
+	}
 	addr := cfg.Addrs[0] // single-node for local; swap for cluster in prod
 	rdb := goredis.NewClient(&goredis.Options{
 		Addr:            addr,
@@ -42,6 +45,11 @@ func New(cfg config.RedisConfig) (*Client, error) {
 	}
 
 	return &Client{rdb: rdb}, nil
+}
+
+// Wrap adapts an existing go-redis client, e.g. one pointed at miniredis in tests.
+func Wrap(rdb *goredis.Client) *Client {
+	return &Client{rdb: rdb}
 }
 
 // Client returns the underlying go-redis client.
