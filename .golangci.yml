@@ -10,6 +10,10 @@ linters-settings:
     min-len: 2
     min-occurrences: 2
   gocritic:
+    disabled-checks:
+      # audit.Event (120 bytes) is passed by value through the AuditLogger
+      # interface on purpose: callers cannot mutate a queued event.
+      - hugeParam
     enabled-tags:
       - diagnostic
       - experimental
@@ -19,9 +23,8 @@ linters-settings:
   goimports:
     local-prefixes: github.com/aryaMehta26/cloudgate
   govet:
-    check-shadowing: true
-  revive:
-    min-confidence: 0
+    enable:
+      - shadow
   misspell:
     locale: US
 
@@ -35,7 +38,7 @@ linters:
     - gocritic
     - gofmt
     - goimports
-    - gomnd
+    - mnd
     - goprintffuncname
     - gosec
     - gosimple
@@ -61,8 +64,9 @@ issues:
   exclude-rules:
     - path: _test\.go
       linters:
-        - gomnd
+        - mnd
         - gosec
+        - goconst
     - path: proto/
       linters:
         - revive
