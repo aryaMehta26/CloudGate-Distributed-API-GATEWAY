@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -178,4 +179,23 @@ func TestPolicyUpdatesReachRunningGateway(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal("policy update never reached the running gateway")
+}
+
+func TestRateLimitIsPerClientIPNotPerConnection(t *testing.T) {
+	up := upstream(t, "ok", http.StatusOK)
+	tc := tenantConfig("acme", up.URL)
+	tc.RateLimit.Burst, tc.RateLimit.RequestsPerSecond = 2, 1
+	h := newHarness(t, tc)
+	codes := []int{}
+	for port := 40000; port < 40004; port++ { // same IP, a new source port each time
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "198.51.100.9:" + strconv.Itoa(port)
+		req.Header.Set(TenantHeader, "acme")
+		w := httptest.NewRecorder()
+		h.gw.ServeHTTP(w, req)
+		codes = append(codes, w.Code)
+	}
+	if codes[0] != 200 || codes[1] != 200 || codes[2] != http.StatusTooManyRequests {
+		t.Fatalf("new connections bypassed the limit: %v", codes)
+	}
 }

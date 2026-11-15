@@ -12,6 +12,7 @@ package router
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -126,7 +127,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.reg.BulkheadCurrent.WithLabelValues(tenantID).Set(float64(rt.bh.Current()))
 
 	// ── Rate limiting ─────────────────────────────────────────────────────────
-	rlKey := fmt.Sprintf("%s:%s", tenantID, r.RemoteAddr)
+	rlKey := tenantID + ":" + clientIP(r)
 	allowed, err := rt.limiter.Allow(r.Context(), rlKey)
 	if err != nil {
 		g.log.Error("rate limiter error", zap.Error(err))
@@ -267,6 +268,17 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) (*tenantRuntime, error) {
 		bh:       bh,
 		upstream: upstreamURL,
 	}, nil
+}
+
+// clientIP returns the caller's IP without the port. Keying limits on
+// RemoteAddr ("ip:port") gave every new TCP connection a fresh bucket, so a
+// client could bypass rate limits just by opening more connections.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.
