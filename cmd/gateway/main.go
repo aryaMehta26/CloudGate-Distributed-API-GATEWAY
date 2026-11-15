@@ -4,11 +4,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/aryaMehta26/cloudgate/internal/audit"
 	"github.com/aryaMehta26/cloudgate/internal/config"
@@ -17,18 +21,34 @@ import (
 	"github.com/aryaMehta26/cloudgate/internal/router"
 	"github.com/aryaMehta26/cloudgate/pkg/cassandra"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
-	"go.uber.org/zap"
+)
+
+// Server timeouts. ReadHeaderTimeout bounds slow-header (Slowloris) clients.
+const (
+	readTimeout       = 15 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+	readHeaderTimeout = 5 * time.Second
+	shutdownTimeout   = 30 * time.Second
 )
 
 func main() {
-	// ── Logger ────────────────────────────────────────────────────────────────
 	log, _ := zap.NewProduction()
-	defer log.Sync() //nolint:errcheck
+	// run returns instead of calling log.Fatal, so its deferred cleanup (audit
+	// drain, Redis/Cassandra close) always runs before the process exits.
+	if err := run(log); err != nil {
+		log.Error("gateway exited with error", zap.Error(err))
+		_ = log.Sync()
+		os.Exit(1)
+	}
+	_ = log.Sync()
+}
 
+func run(log *zap.Logger) error {
 	// ── Config ────────────────────────────────────────────────────────────────
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("failed to load config", zap.Error(err))
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	// ── Prometheus metrics ────────────────────────────────────────────────────
@@ -37,14 +57,14 @@ func main() {
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	rdb, err := redis.New(cfg.Redis)
 	if err != nil {
-		log.Fatal("failed to connect to redis", zap.Error(err))
+		return fmt.Errorf("connect to redis: %w", err)
 	}
 	defer rdb.Close()
 
 	// ── Cassandra ─────────────────────────────────────────────────────────────
 	cass, err := cassandra.New(cfg.Cassandra)
 	if err != nil {
-		log.Fatal("failed to connect to cassandra", zap.Error(err))
+		return fmt.Errorf("connect to cassandra: %w", err)
 	}
 	defer cass.Close()
 
@@ -56,15 +76,15 @@ func main() {
 	// ── Router / reverse proxy ────────────────────────────────────────────────
 	mux, err := router.New(cfg, rdb, reg, auditor, log)
 	if err != nil {
-		log.Fatal("invalid tenant configuration", zap.Error(err))
+		return fmt.Errorf("invalid tenant configuration: %w", err)
 	}
 
 	// Apply policy changes from the admin API on every replica.
 	watchCtx, stopWatch := context.WithCancel(context.Background())
 	defer stopWatch()
 	go func() {
-		if err := mux.WatchPolicyUpdates(watchCtx, nil); err != nil {
-			log.Error("policy update watcher stopped", zap.Error(err))
+		if werr := mux.WatchPolicyUpdates(watchCtx, nil); werr != nil {
+			log.Error("policy update watcher stopped", zap.Error(werr))
 		}
 	}()
 
@@ -77,52 +97,49 @@ func main() {
 		middleware.Metrics(reg),
 	)
 
-	// ── HTTP server ───────────────────────────────────────────────────────────
+	// ── HTTP servers ──────────────────────────────────────────────────────────
 	srv := &http.Server{
 		Addr:              cfg.Server.Addr,
 		Handler:           handler,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
-
-	// ── Metrics server (separate port) ────────────────────────────────────────
 	metricsSrv := &http.Server{
-		Addr:    cfg.Server.MetricsAddr,
-		Handler: reg.Handler(),
+		Addr:              cfg.Server.MetricsAddr,
+		Handler:           reg.Handler(),
+		ReadHeaderTimeout: readHeaderTimeout,
 	}
 
-	go func() {
-		log.Info("metrics server listening", zap.String("addr", cfg.Server.MetricsAddr))
-		if err := metricsSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("metrics server error", zap.Error(err))
+	serveErr := make(chan error, 2) //nolint:mnd // one slot per server
+	serve := func(name string, s *http.Server) {
+		log.Info(name+" listening", zap.String("addr", s.Addr))
+		if serr := s.ListenAndServe(); serr != nil && !errors.Is(serr, http.ErrServerClosed) {
+			serveErr <- fmt.Errorf("%s: %w", name, serr)
 		}
-	}()
-
-	go func() {
-		log.Info("gateway listening", zap.String("addr", cfg.Server.Addr))
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("gateway server error", zap.Error(err))
-			os.Exit(1)
-		}
-	}()
+	}
+	go serve("metrics server", metricsSrv)
+	go serve("gateway", srv)
 
 	// ── Graceful shutdown ─────────────────────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	var runErr error
+	select {
+	case <-quit:
+		log.Info("shutting down gracefully...")
+	case runErr = <-serveErr:
+	}
 
-	log.Info("shutting down gracefully...")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Error("gateway shutdown error", zap.Error(err))
 	}
 	if err := metricsSrv.Shutdown(ctx); err != nil {
 		log.Error("metrics server shutdown error", zap.Error(err))
 	}
-
 	log.Info("shutdown complete")
+	return runErr
 }

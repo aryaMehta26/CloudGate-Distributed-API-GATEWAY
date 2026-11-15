@@ -4,32 +4,42 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+
 	"github.com/aryaMehta26/cloudgate/internal/config"
 	"github.com/aryaMehta26/cloudgate/internal/tenant"
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
 	adminpb "github.com/aryaMehta26/cloudgate/proto/admin"
-	"go.uber.org/zap"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
 
 func main() {
 	log, _ := zap.NewProduction()
-	defer log.Sync() //nolint:errcheck
+	// run returns instead of calling log.Fatal, so deferred cleanup runs.
+	if err := run(log); err != nil {
+		log.Error("admin server exited with error", zap.Error(err))
+		_ = log.Sync()
+		os.Exit(1)
+	}
+	_ = log.Sync()
+}
 
+func run(log *zap.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("failed to load config", zap.Error(err))
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	rdb, err := redis.New(cfg.Redis)
 	if err != nil {
-		log.Fatal("failed to connect to redis", zap.Error(err))
+		return fmt.Errorf("connect to redis: %w", err)
 	}
 	defer rdb.Close()
 
@@ -37,7 +47,7 @@ func main() {
 
 	lis, err := net.Listen("tcp", cfg.Admin.GRPCAddr)
 	if err != nil {
-		log.Fatal("failed to listen", zap.Error(err), zap.String("addr", cfg.Admin.GRPCAddr))
+		return fmt.Errorf("listen on %s: %w", cfg.Admin.GRPCAddr, err)
 	}
 
 	grpcSrv := grpc.NewServer(
@@ -46,21 +56,24 @@ func main() {
 	adminpb.RegisterAdminServiceServer(grpcSrv, tenant.NewAdminServer(store, log))
 	reflection.Register(grpcSrv)
 
+	serveErr := make(chan error, 1)
 	go func() {
 		log.Info("admin gRPC server listening", zap.String("addr", cfg.Admin.GRPCAddr))
-		if err := grpcSrv.Serve(lis); err != nil {
-			log.Error("grpc server error", zap.Error(err))
-			os.Exit(1)
-		}
+		serveErr <- grpcSrv.Serve(lis)
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
+	select {
+	case <-quit:
+	case err = <-serveErr:
+		return fmt.Errorf("grpc server: %w", err)
+	}
 
 	log.Info("stopping admin gRPC server...")
 	grpcSrv.GracefulStop()
 	log.Info("admin server stopped")
+	return nil
 }
 
 func loggingInterceptor(log *zap.Logger) grpc.UnaryServerInterceptor {
