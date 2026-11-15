@@ -5,7 +5,9 @@ package tenant
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/aryaMehta26/cloudgate/pkg/redis"
@@ -30,6 +32,33 @@ type Policy struct {
 	CBFailures      int      `json:"cb_failures"`
 	CBOpenTimeoutMs int      `json:"cb_open_timeout_ms"`
 	CBSuccesses     int      `json:"cb_successes"`
+}
+
+// Validate reports whether the policy can be enforced: it needs a tenant ID,
+// at least one absolute http(s) upstream URL, and positive limits.
+func (p *Policy) Validate() error {
+	if p.TenantID == "" {
+		return errors.New("tenant_id is required")
+	}
+	if len(p.Upstreams) == 0 {
+		return errors.New("at least one upstream is required")
+	}
+	for _, u := range p.Upstreams {
+		parsed, err := url.Parse(u)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("upstream %q must be an absolute http(s) URL", u)
+		}
+	}
+	for name, v := range map[string]int{
+		"rps_limit": p.RPSLimit, "burst": p.Burst, "window_secs": p.WindowSecs,
+		"max_in_window": p.MaxInWindow, "bulkhead_max": p.BulkheadMax,
+		"cb_failures": p.CBFailures, "cb_open_timeout_ms": p.CBOpenTimeoutMs, "cb_successes": p.CBSuccesses,
+	} {
+		if v <= 0 {
+			return fmt.Errorf("%s must be positive, got %d", name, v)
+		}
+	}
+	return nil
 }
 
 // Store manages tenant policies backed by Redis with an in-memory cache.

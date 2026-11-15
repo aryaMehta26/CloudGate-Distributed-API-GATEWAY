@@ -54,7 +54,10 @@ func main() {
 	defer auditor.Stop()
 
 	// ── Router / reverse proxy ────────────────────────────────────────────────
-	mux := router.New(cfg, rdb, reg, auditor, log)
+	mux, err := router.New(cfg, rdb, reg, auditor, log)
+	if err != nil {
+		log.Fatal("invalid tenant configuration", zap.Error(err))
+	}
 
 	// ── Middleware chain ──────────────────────────────────────────────────────
 	handler := middleware.Chain(

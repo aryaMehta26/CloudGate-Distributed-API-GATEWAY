@@ -60,8 +60,9 @@ type Gateway struct {
 	runtimes map[string]*tenantRuntime
 }
 
-// New builds a new Gateway and pre-warms tenant runtimes from config.
-func New(cfg *config.Config, rdb *redis.Client, reg *metrics.Registry, auditor AuditLogger, log *zap.Logger) *Gateway {
+// New builds a new Gateway and pre-warms tenant runtimes from config. It
+// fails if any configured tenant has an invalid policy.
+func New(cfg *config.Config, rdb *redis.Client, reg *metrics.Registry, auditor AuditLogger, log *zap.Logger) (*Gateway, error) {
 	store := tenant.NewRedisStore(rdb, log)
 	g := &Gateway{
 		cfg:      cfg,
@@ -87,10 +88,14 @@ func New(cfg *config.Config, rdb *redis.Client, reg *metrics.Registry, auditor A
 			CBOpenTimeoutMs: int(tc.CircuitBreaker.OpenTimeout.Milliseconds()),
 			CBSuccesses:     tc.CircuitBreaker.SuccessThreshold,
 		}
-		g.runtimes[tc.ID] = g.buildRuntime(p)
+		rt, err := g.buildRuntime(p)
+		if err != nil {
+			return nil, fmt.Errorf("tenant %q: %w", tc.ID, err)
+		}
+		g.runtimes[tc.ID] = rt
 	}
 
-	return g
+	return g, nil
 }
 
 // ServeHTTP is the core request handling loop.
@@ -200,8 +205,11 @@ func (g *Gateway) getRuntime(ctx interface{ Value(any) any }, tenantID string) (
 	return nil, fmt.Errorf("tenant %q not configured", tenantID)
 }
 
-// buildRuntime constructs all per-tenant runtime objects from a policy.
-func (g *Gateway) buildRuntime(p *tenant.Policy) *tenantRuntime {
+// buildRuntime constructs all per-tenant runtime objects from a validated policy.
+func (g *Gateway) buildRuntime(p *tenant.Policy) (*tenantRuntime, error) {
+	if err := p.Validate(); err != nil {
+		return nil, err
+	}
 	rdbClient := g.rdb.Client()
 
 	tb := ratelimit.NewTokenBucket(rdbClient, p.Burst, float64(p.RPSLimit))
@@ -221,7 +229,7 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) *tenantRuntime {
 	bh := bulkhead.New(p.BulkheadMax)
 
 	// Simple: pick first upstream (production would use weighted round-robin)
-	upstreamURL, _ := url.Parse(p.Upstreams[0])
+	upstreamURL, _ := url.Parse(p.Upstreams[0]) // checked by Validate
 
 	return &tenantRuntime{
 		policy:   p,
@@ -229,7 +237,7 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) *tenantRuntime {
 		cb:       cb,
 		bh:       bh,
 		upstream: upstreamURL,
-	}
+	}, nil
 }
 
 // responseWriter wraps http.ResponseWriter to capture the status code.

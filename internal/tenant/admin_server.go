@@ -41,6 +41,10 @@ func (s *AdminServer) UpdatePolicy(ctx context.Context, req *adminpb.UpdatePolic
 		CBSuccesses:     int(req.GetCbSuccessThreshold()),
 	}
 
+	if err := policy.Validate(); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid policy: %v", err)
+	}
+
 	if err := s.store.Set(ctx, policy); err != nil {
 		s.log.Error("failed to update policy", zap.Error(err), zap.String("tenant", req.GetTenantId()))
 		return nil, status.Errorf(codes.Internal, "failed to update policy: %v", err)

@@ -79,6 +79,10 @@ func TestAdminServiceValidation(t *testing.T) {
 	if _, err := c.UpdatePolicy(ctx, &adminpb.UpdatePolicyRequest{}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("missing tenant: %v", err)
 	}
+	bad := &adminpb.UpdatePolicyRequest{TenantId: "acme", Upstreams: []string{"not a url"}, RpsLimit: 1}
+	if _, err := c.UpdatePolicy(ctx, bad); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("invalid policy: %v", err)
+	}
 	if _, err := c.GetPolicy(ctx, &adminpb.GetPolicyRequest{TenantId: "nobody"}); status.Code(err) != codes.NotFound {
 		t.Fatalf("unknown tenant: %v", err)
 	}

@@ -51,7 +51,10 @@ func newHarness(t *testing.T, tenants ...config.TenantConfig) *harness {
 	rdb := redis.Wrap(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
 	t.Cleanup(func() { rdb.Close() })
 	rec := &auditRecorder{}
-	gw := New(&config.Config{Tenants: tenants}, rdb, metrics.NewRegistry(), rec, zap.NewNop())
+	gw, err := New(&config.Config{Tenants: tenants}, rdb, metrics.NewRegistry(), rec, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &harness{gw: gw, mr: mr, rdb: rdb, audit: rec}
 }
 
@@ -109,5 +112,15 @@ func TestCircuitOpensAfterUpstreamFailures(t *testing.T) {
 	}
 	if w := h.do(t, "acme", "/"); w.Code != http.StatusBadGateway {
 		t.Fatalf("circuit should be open: %d", w.Code)
+	}
+}
+
+func TestNewRejectsInvalidTenantConfig(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.Wrap(goredis.NewClient(&goredis.Options{Addr: mr.Addr()}))
+	defer rdb.Close()
+	bad := tenantConfig("acme") // no upstreams: used to panic on Upstreams[0]
+	if _, err := New(&config.Config{Tenants: []config.TenantConfig{bad}}, rdb, metrics.NewRegistry(), &auditRecorder{}, zap.NewNop()); err == nil {
+		t.Fatal("tenant without upstreams accepted")
 	}
 }
