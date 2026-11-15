@@ -41,13 +41,19 @@ type tenantRuntime struct {
 	upstream *url.URL // currently selected upstream (round-robin simplified)
 }
 
+// AuditLogger receives one event per proxied request. *audit.Writer
+// implements it; tests substitute an in-memory recorder.
+type AuditLogger interface {
+	Log(audit.Event)
+}
+
 // Gateway is the HTTP handler implementing multi-tenant reverse proxying.
 type Gateway struct {
 	cfg     *config.Config
 	store   *tenant.Store
 	rdb     *redis.Client
 	reg     *metrics.Registry
-	auditor *audit.Writer
+	auditor AuditLogger
 	log     *zap.Logger
 
 	mu       sync.RWMutex
@@ -55,7 +61,7 @@ type Gateway struct {
 }
 
 // New builds a new Gateway and pre-warms tenant runtimes from config.
-func New(cfg *config.Config, rdb *redis.Client, reg *metrics.Registry, auditor *audit.Writer, log *zap.Logger) *Gateway {
+func New(cfg *config.Config, rdb *redis.Client, reg *metrics.Registry, auditor AuditLogger, log *zap.Logger) *Gateway {
 	store := tenant.NewRedisStore(rdb, log)
 	g := &Gateway{
 		cfg:      cfg,
