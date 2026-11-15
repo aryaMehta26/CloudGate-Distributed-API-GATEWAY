@@ -109,8 +109,8 @@ bench-compare:
 
 ## install-tools: Install all required development tools
 install-tools:
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.59.1
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+	go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
 	go install golang.org/x/tools/cmd/benchcmp@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0

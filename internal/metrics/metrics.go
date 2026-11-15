@@ -81,6 +81,9 @@ type Registry struct {
 	RedisErrors *prometheus.CounterVec
 }
 
+// namespace prefixes every CloudGate metric name.
+const namespace = "cloudgate"
+
 // NewRegistry creates and registers all CloudGate metrics.
 func NewRegistry() *Registry {
 	reg := prometheus.NewRegistry()
@@ -93,7 +96,7 @@ func NewRegistry() *Registry {
 
 	// ── HTTP gateway ─────────────────────────────────────────────────────────
 	r.RequestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "gateway",
 		Name:      "requests_total",
 		Help:      "Total number of HTTP requests processed by the gateway.",
@@ -102,7 +105,7 @@ func NewRegistry() *Registry {
 	}, []string{"tenant", "method", "status"})
 
 	r.RequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "gateway",
 		Name:      "request_duration_seconds",
 		Help:      "HTTP request latency in seconds.",
@@ -110,14 +113,14 @@ func NewRegistry() *Registry {
 	}, []string{"tenant", "method", "status"})
 
 	r.RequestInFlight = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "gateway",
 		Name:      "requests_in_flight",
 		Help:      "Current number of in-flight requests.",
 	}, []string{"tenant"})
 
 	r.ResponseSize = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "gateway",
 		Name:      "response_size_bytes",
 		Help:      "HTTP response body size in bytes.",
@@ -126,7 +129,7 @@ func NewRegistry() *Registry {
 
 	// ── Rate limiting ─────────────────────────────────────────────────────────
 	r.RateLimitTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "ratelimit",
 		Name:      "decisions_total",
 		Help:      "Total rate limit decisions (allowed/denied) by strategy.",
@@ -134,14 +137,14 @@ func NewRegistry() *Registry {
 
 	// ── Circuit breaker ───────────────────────────────────────────────────────
 	r.CircuitBreakerState = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "circuit_breaker",
 		Name:      "state",
 		Help:      "Current circuit breaker state: 0=closed, 1=open, 2=half-open.",
 	}, []string{"upstream"})
 
 	r.CircuitBreakerTransitions = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "circuit_breaker",
 		Name:      "transitions_total",
 		Help:      "Number of circuit breaker state transitions.",
@@ -149,14 +152,14 @@ func NewRegistry() *Registry {
 
 	// ── Bulkhead ──────────────────────────────────────────────────────────────
 	r.BulkheadRejectedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "bulkhead",
 		Name:      "rejected_total",
 		Help:      "Total requests rejected by the bulkhead.",
 	}, []string{"tenant"})
 
 	r.BulkheadCurrent = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "bulkhead",
 		Name:      "current_occupancy",
 		Help:      "Current number of occupied bulkhead slots.",
@@ -164,14 +167,14 @@ func NewRegistry() *Registry {
 
 	// ── Upstream ──────────────────────────────────────────────────────────────
 	r.UpstreamRequestTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "upstream",
 		Name:      "requests_total",
 		Help:      "Total requests forwarded to upstreams.",
 	}, []string{"tenant", "upstream", "status"})
 
 	r.UpstreamDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "upstream",
 		Name:      "request_duration_seconds",
 		Help:      "Upstream response latency in seconds.",
@@ -179,7 +182,7 @@ func NewRegistry() *Registry {
 	}, []string{"tenant", "upstream"})
 
 	r.UpstreamErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "upstream",
 		Name:      "errors_total",
 		Help:      "Total upstream errors by type.",
@@ -187,21 +190,21 @@ func NewRegistry() *Registry {
 
 	// ── Audit ─────────────────────────────────────────────────────────────────
 	r.AuditQueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "audit",
 		Name:      "queue_depth",
 		Help:      "Current depth of the audit log write queue.",
 	})
 
 	r.AuditWriteTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "audit",
 		Name:      "writes_total",
 		Help:      "Total Cassandra audit log writes.",
 	}, []string{"status"})
 
 	r.AuditWriteDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "audit",
 		Name:      "write_duration_seconds",
 		Help:      "Cassandra audit write latency in seconds.",
@@ -210,7 +213,7 @@ func NewRegistry() *Registry {
 
 	// ── Redis ─────────────────────────────────────────────────────────────────
 	r.RedisCommandDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "redis",
 		Name:      "command_duration_seconds",
 		Help:      "Redis command latency in seconds.",
@@ -218,7 +221,7 @@ func NewRegistry() *Registry {
 	}, []string{"command"})
 
 	r.RedisErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "cloudgate",
+		Namespace: namespace,
 		Subsystem: "redis",
 		Name:      "errors_total",
 		Help:      "Total Redis errors by command.",

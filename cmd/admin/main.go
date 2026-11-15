@@ -45,7 +45,7 @@ func run(log *zap.Logger) error {
 
 	store := tenant.NewRedisStore(rdb, log)
 
-	lis, err := net.Listen("tcp", cfg.Admin.GRPCAddr)
+	lis, err := new(net.ListenConfig).Listen(context.Background(), "tcp", cfg.Admin.GRPCAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Admin.GRPCAddr, err)
 	}

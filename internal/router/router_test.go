@@ -66,7 +66,7 @@ func newHarness(t *testing.T, tenants ...config.TenantConfig) *harness {
 
 func (h *harness) do(t *testing.T, tenantID, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, http.NoBody)
 	req.RemoteAddr = "203.0.113.7:51000"
 	if tenantID != "" {
 		req.Header.Set(TenantHeader, tenantID)
@@ -191,7 +191,7 @@ func TestRateLimitIsPerClientIPNotPerConnection(t *testing.T) {
 	h := newHarness(t, tc)
 	codes := []int{}
 	for port := 40000; port < 40004; port++ { // same IP, a new source port each time
-		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 		req.RemoteAddr = "198.51.100.9:" + strconv.Itoa(port)
 		req.Header.Set(TenantHeader, "acme")
 		w := httptest.NewRecorder()
@@ -224,7 +224,7 @@ func TestForwardedForAppendsClientIP(t *testing.T) {
 	}))
 	defer up.Close()
 	h := newHarness(t, tenantConfig("acme", up.URL))
-	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	req.RemoteAddr = "203.0.113.7:51000"
 	req.Header.Set(TenantHeader, "acme")
 	req.Header.Set("X-Forwarded-For", "192.0.2.1")
@@ -241,7 +241,7 @@ func TestForwardsRequestID(t *testing.T) {
 	}))
 	defer up.Close()
 	h := newHarness(t, tenantConfig("acme", up.URL))
-	req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 	req.Header.Set(TenantHeader, "acme")
 	req.Header.Set("X-Request-ID", "req-123")
 	h.gw.ServeHTTP(httptest.NewRecorder(), req)
@@ -265,7 +265,7 @@ func BenchmarkProxy(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		req := httptest.NewRequest(http.MethodGet, "/", http.NoBody)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", http.NoBody)
 		req.Header.Set(TenantHeader, "acme")
 		gw.ServeHTTP(httptest.NewRecorder(), req)
 	}
@@ -315,7 +315,7 @@ func TestStreamsFlushedResponses(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: first\n\n")
-		_ = http.NewResponseController(w).Flush() //nolint:bodyclose // server-side writer, no response body
+		_ = http.NewResponseController(w).Flush()
 		<-release
 	}))
 	defer up.Close()
