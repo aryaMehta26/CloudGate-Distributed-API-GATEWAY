@@ -62,7 +62,8 @@ func TestAdminServiceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.RpsLimit != 100 || got.Burst != 20 || len(got.Upstreams) != 2 ||
-		got.BulkheadMax != 32 || got.CbOpenTimeoutMs != 3000 {
+		got.BulkheadMax != 32 || got.CbOpenTimeoutMs != 3000 ||
+		got.GetWindowSecs() != 60 || got.GetMaxInWindow() != 5000 {
 		t.Fatalf("GetPolicy returned %+v", got)
 	}
 	list, err := c.ListTenants(ctx, &adminpb.ListTenantsRequest{})

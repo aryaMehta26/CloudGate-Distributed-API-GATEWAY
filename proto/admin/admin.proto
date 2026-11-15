@@ -60,6 +60,10 @@ message GetPolicyResponse {
   int32 cb_failure_threshold   = 6;
   int32 cb_open_timeout_ms     = 7;
   int32 cb_success_threshold   = 8;
+
+  // Sliding window limits, as set by UpdatePolicy.
+  int32 window_secs            = 9;
+  int32 max_in_window          = 10;
 }
 
 // ── ListTenants ───────────────────────────────────────────────────────────────

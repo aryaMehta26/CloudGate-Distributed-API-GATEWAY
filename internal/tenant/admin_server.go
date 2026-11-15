@@ -68,6 +68,8 @@ func (s *AdminServer) GetPolicy(ctx context.Context, req *adminpb.GetPolicyReque
 		Upstreams:          p.Upstreams,
 		RpsLimit:           int32(p.RPSLimit),
 		Burst:              int32(p.Burst),
+		WindowSecs:         int32(p.WindowSecs),
+		MaxInWindow:        int32(p.MaxInWindow),
 		BulkheadMax:        int32(p.BulkheadMax),
 		CbFailureThreshold: int32(p.CBFailures),
 		CbOpenTimeoutMs:    int32(p.CBOpenTimeoutMs),
