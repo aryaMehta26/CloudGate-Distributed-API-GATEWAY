@@ -267,3 +267,17 @@ func BenchmarkProxy(b *testing.B) {
 		gw.ServeHTTP(httptest.NewRecorder(), req)
 	}
 }
+
+func TestRoundRobinAcrossUpstreams(t *testing.T) {
+	a := upstream(t, "a", http.StatusOK)
+	b := upstream(t, "b", http.StatusOK)
+	c := upstream(t, "c", http.StatusOK)
+	h := newHarness(t, tenantConfig("acme", a.URL, b.URL, c.URL))
+	got := ""
+	for i := 0; i < 6; i++ {
+		got += h.do(t, "acme", "/").Body.String()
+	}
+	if got != "abcabc" {
+		t.Fatalf("upstream order %q", got)
+	}
+}

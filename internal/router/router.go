@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aryaMehta26/cloudgate/internal/audit"
@@ -36,12 +37,22 @@ const TenantHeader = "X-Tenant-ID"
 
 // tenantRuntime holds the per-tenant runtime objects (limiters, CB, bulkhead).
 type tenantRuntime struct {
-	policy   *tenant.Policy
-	limiter  *ratelimit.Composite
-	cb       *circuitbreaker.CircuitBreaker
-	bh       *bulkhead.Bulkhead
-	upstream *url.URL // currently selected upstream (round-robin simplified)
-	proxy    *httputil.ReverseProxy
+	policy    *tenant.Policy
+	limiter   *ratelimit.Composite
+	cb        *circuitbreaker.CircuitBreaker
+	bh        *bulkhead.Bulkhead
+	upstreams []upstreamTarget
+	next      atomic.Uint64 // round-robin cursor
+}
+
+type upstreamTarget struct {
+	url   *url.URL
+	proxy *httputil.ReverseProxy
+}
+
+// pick returns the next upstream in round-robin order.
+func (rt *tenantRuntime) pick() upstreamTarget {
+	return rt.upstreams[(rt.next.Add(1)-1)%uint64(len(rt.upstreams))]
 }
 
 // AuditLogger receives one event per proxied request. *audit.Writer
@@ -150,7 +161,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// ── Reverse proxy ─────────────────────────────────────────────────────────
 	rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
-	rt.proxy.ServeHTTP(rw, r)
+	target := rt.pick()
+	target.proxy.ServeHTTP(rw, r)
 
 	latency := time.Since(start)
 	// Exactly one circuit-breaker outcome per request. Proxy errors reach here
@@ -166,8 +178,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	statusStr := strconv.Itoa(rw.statusCode)
 	g.reg.RequestTotal.WithLabelValues(tenantID, r.Method, r.URL.Path, statusStr).Inc()
 	g.reg.RequestDuration.WithLabelValues(tenantID, r.Method, statusStr).Observe(latency.Seconds())
-	g.reg.UpstreamRequestTotal.WithLabelValues(tenantID, rt.upstream.Host, statusStr).Inc()
-	g.reg.UpstreamDuration.WithLabelValues(tenantID, rt.upstream.Host).Observe(latency.Seconds())
+	g.reg.UpstreamRequestTotal.WithLabelValues(tenantID, target.url.Host, statusStr).Inc()
+	g.reg.UpstreamDuration.WithLabelValues(tenantID, target.url.Host).Observe(latency.Seconds())
 
 	// ── Audit ─────────────────────────────────────────────────────────────────
 	g.auditor.Log(audit.Event{
@@ -247,16 +259,19 @@ func (g *Gateway) buildRuntime(p *tenant.Policy) (*tenantRuntime, error) {
 
 	bh := bulkhead.New(p.BulkheadMax)
 
-	// Simple: pick first upstream (production would use weighted round-robin)
-	upstreamURL, _ := url.Parse(p.Upstreams[0]) // checked by Validate
+	// Requests rotate across every upstream; previously only Upstreams[0] was used.
+	targets := make([]upstreamTarget, len(p.Upstreams))
+	for i, raw := range p.Upstreams {
+		u, _ := url.Parse(raw) // checked by Validate
+		targets[i] = upstreamTarget{url: u, proxy: g.newProxy(p.TenantID, u)}
+	}
 
 	return &tenantRuntime{
-		policy:   p,
-		limiter:  composite,
-		cb:       cb,
-		bh:       bh,
-		upstream: upstreamURL,
-		proxy:    g.newProxy(p.TenantID, upstreamURL),
+		policy:    p,
+		limiter:   composite,
+		cb:        cb,
+		bh:        bh,
+		upstreams: targets,
 	}, nil
 }
 
